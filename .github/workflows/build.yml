@@ -53,6 +53,8 @@ jobs:
             --add-data "personality_annotator/config.example.yaml${{ matrix.sep }}personality_annotator" \
             --collect-all imageio_ffmpeg \
             --collect-submodules uvicorn \
+            --hidden-import personality_annotator.picker \
+            --hidden-import tkinter --hidden-import tkinter.filedialog \
             run_annotator.py
       - name: Package with example config and sample data
         shell: bash
@@ -61,7 +63,7 @@ jobs:
           mkdir -p release/sample_data
           cp dist/PersonalityAnnotator* release/
           cp -r examples/sample_data/* release/sample_data/
-          sed 's#./my_videos#./sample_data/videos#' personality_annotator/config.example.yaml > release/config.yaml
+          python -c "import pathlib; s = pathlib.Path('personality_annotator/config.example.yaml').read_text(encoding='utf-8'); pathlib.Path('release/config.yaml').write_text(s.replace('sources: []\n', 'sources:\n  - type: local\n    path: ./sample_data\n    recursive: true\n', 1), encoding='utf-8')"
           cp README.md LICENSE release/
       - uses: actions/upload-artifact@v4
         with:

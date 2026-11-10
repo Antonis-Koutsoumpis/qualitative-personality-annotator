@@ -60,7 +60,7 @@ def load_ratings(
 
 def item_coverage(con, config: Config, item: sqlite3.Row, ratings: list[dict],
                   bin_s: float | None = None, include_empty: bool = False) -> list[dict]:
-    if config.modality == "text":
+    if item["modality"] == "text":
         return analysis.text_coverage(ratings, item["text"] or "", config.scale_midpoint,
                                       config.variable_ids, include_empty)
     return analysis.time_coverage(ratings, item["duration_s"], bin_s or config.coverage_bin_s,
@@ -89,15 +89,21 @@ def _all_items(con):
 def coverage_csv(db: Database, config: Config, include_open=False, include_empty=False,
                  bin_s: float | None = None) -> str:
     rows = []
+    modalities = set()
     with db.connect() as con:
         for item in _all_items(con):
             ratings = load_ratings(con, item["item_id"], include_open=include_open)
-            for row in item_coverage(con, config, item, ratings, bin_s, include_empty):
-                rows.append({"item_id": item["item_id"], **row})
-    if config.modality == "text":
-        cols = ["item_id", "variable", "token_index", "token", "char_start", "char_end"]
-    else:
-        cols = ["item_id", "variable", "bin_index", "bin_start_s", "bin_end_s"]
+            covered = item_coverage(con, config, item, ratings, bin_s, include_empty)
+            if covered:
+                modalities.add(item["modality"])
+            for row in covered:
+                rows.append({"item_id": item["item_id"], "modality": item["modality"], **row})
+    # Time columns for video/audio, word columns for text; both if the project mixes them.
+    cols = ["item_id", "modality", "variable"]
+    if modalities - {"text"} or not modalities:
+        cols += ["bin_index", "bin_start_s", "bin_end_s"]
+    if "text" in modalities:
+        cols += ["token_index", "token", "char_start", "char_end"]
     cols += ["n_annotators", "mean_score", "sd_score", "n_low", "n_mid", "n_high", "annotators"]
     return to_csv(rows, cols)
 
@@ -113,18 +119,26 @@ def peaks_rows(db: Database, config: Config, threshold: int, include_open=False,
                 continue
             ratings = load_ratings(con, item["item_id"], annotators, include_open)
             cov = item_coverage(con, config, item, ratings, bin_s)
-            for p in analysis.peaks(cov, ratings, threshold, config.modality, item["text"]):
-                out.append({"item_id": item["item_id"], **p})
+            for p in analysis.peaks(cov, ratings, threshold, item["modality"], item["text"]):
+                out.append({"item_id": item["item_id"], "modality": item["modality"], **p})
     return out
 
 
 def peaks_csv(db, config, threshold, include_open=False, bin_s=None) -> str:
     rows = peaks_rows(db, config, threshold, include_open, bin_s=bin_s)
-    unit = "char" if config.modality == "text" else "s"
-    cols = ["item_id", "variable", "start", "end", "max_n_annotators", "mean_score",
-            "n_ratings", "annotators"] + (["span_text"] if config.modality == "text" else [])
-    renamed = [{**r, f"start_{unit}": r["start"], f"end_{unit}": r["end"]} for r in rows]
-    cols = [f"{c}_{unit}" if c in ("start", "end") else c for c in cols]
+    mods = {r["modality"] for r in rows} or set(config.modalities)
+    cols = ["item_id", "modality", "variable"]
+    if mods - {"text"}:
+        cols += ["start_s", "end_s"]
+    if "text" in mods:
+        cols += ["start_char", "end_char"]
+    cols += ["max_n_annotators", "mean_score", "n_ratings", "annotators"]
+    if "text" in mods:
+        cols.append("span_text")
+    renamed = []
+    for r in rows:
+        unit = "char" if r["modality"] == "text" else "s"
+        renamed.append({**r, f"start_{unit}": r["start"], f"end_{unit}": r["end"]})
     return to_csv(renamed, cols)
 
 
@@ -175,9 +189,6 @@ def import_dump(db: Database, config: Config, dump: dict[str, Any]) -> dict[str,
     """
     if dump.get("format") != "personality-annotator-dump":
         raise ValueError("Not a full export from this tool (full_export.json).")
-    if dump.get("modality") != config.modality:
-        raise ValueError(f"Export modality {dump.get('modality')!r} does not match "
-                         f"this project ({config.modality!r}).")
     counts = {t: 0 for t in ("annotators", "items", "assignments", "segments", "ratings")}
     warnings: list[str] = []
     with db.connect(immediate=True) as con:

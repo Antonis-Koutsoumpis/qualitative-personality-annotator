@@ -9,7 +9,9 @@ everything in long format, and cut the annotated segments into clips for AI trai
 or rater training.
 
 This is the **pilot (local) version**: it runs on one computer and opens in the browser.
-Items can come from a local folder or a public Zenodo record.
+Items can be added from folders or files on your computer, a public Zenodo record, or a
+direct link, and video, audio and text can be mixed in one project
+(see [Supported formats](#supported-formats)).
 
 ![Annotating a video](docs/video_annotate.png)
 
@@ -18,6 +20,7 @@ Items can come from a local folder or a public Zenodo record.
 - [Quick start](#quick-start)
 - [Step-by-step: running a pilot (researcher)](#step-by-step-running-a-pilot-researcher)
 - [Step-by-step: annotating (annotators)](#step-by-step-annotating-annotators)
+- [Supported formats](#supported-formats)
 - [Configuration](#configuration)
 - [Results, exports and clips](#results-exports-and-clips)
 - [Several raters on different computers](#several-raters-on-different-computers)
@@ -55,7 +58,7 @@ laptops already have it, or offer it through the Software Center.
    ```
 5. Start the tool with one of the example projects:
    ```
-   python -m personality_annotator --config examples/config_video.yaml
+   python -m personality_annotator --config examples/config_pilot.yaml
    ```
    Your browser opens at `http://127.0.0.1:8765`.
 
@@ -65,12 +68,14 @@ Everything is already installed, so you only need steps 2, 3 and 5:
 
 ```
 cd Documents\qualitative-personality-annotator
-python -m personality_annotator --config examples/config_video.yaml
+python -m personality_annotator --config examples/config_pilot.yaml
 ```
 
-Replace `examples/config_video.yaml` with your own config file once you have one
-(see [Configuration](#configuration)). Example configs: `config_video.yaml`,
-`config_audio.yaml`, `config_text.yaml` and `config_zenodo.yaml` in `examples/`.
+Replace `examples/config_pilot.yaml` with your own config file once you have one
+(see [Configuration](#configuration)). Example configs in `examples/`:
+`config_pilot.yaml` (mixed sample items, annotators choose items), and
+`config_video.yaml`, `config_audio.yaml`, `config_text.yaml`, `config_zenodo.yaml`
+(one type of material each, random assignment).
 
 **Stopping the tool**: click in the Anaconda Prompt window and press `Ctrl+C`
 (or close the window). Everything has been saved; start it again with the commands
@@ -126,27 +131,34 @@ To password-protect the admin page, set the environment variable
 ## Step-by-step: running a pilot (researcher)
 
 1. **Try it with the sample items.** Start the tool with
-   `examples/config_video.yaml` and annotate as a test user (see the next section).
-   The sample videos are synthetic test patterns, so you can mark anything.
+   `examples/config_pilot.yaml` and annotate as a test user (see the next section).
+   The sample videos and audio are synthetic test patterns, so you can mark anything.
 2. **Make your own project.** Copy `personality_annotator/config.example.yaml` to a new
    file, e.g. `my_pilot.yaml`, in the main folder and edit it in any text editor:
-   - `modality`: `video`, `audio` or `text`;
-   - `sources`: the folder with your files, or your Zenodo link;
    - `variables`: what annotators may rate (HEXACO domains are filled in; facet and
      other examples are included as comments);
-   - `annotators_per_item`: how many raters each item needs.
+   - `annotators_per_item`: how many raters each item needs;
+   - `item_selection`: `choose` (annotators pick items from a list) or `random`
+     (the tool hands out items; use this for the actual rating study);
+   - `modality`: `any` to allow video, audio and text, or one of them.
    Then start the tool with `--config my_pilot.yaml`.
-3. **Check the items arrived.** Open the admin page → *Overview*. Under *Sources* you
-   see how many files were found and any errors (e.g. a wrong folder path). The
-   *Items* table lists them. After adding files, click *Re-scan sources*.
-4. **Hand out participant codes.** A participant code is just a short label you give
+3. **Add your files.** On the admin page → *Overview* → **+ Add files**, choose a
+   folder or files on your computer (or paste a path such as
+   `C:\Users\you\Documents\interviews`), or paste a Zenodo record link or a direct
+   link to a file. Annotators can do the same from their item list unless you set
+   `annotators_can_add_files: false`. You can also list sources in the config file.
+   The files stay where they are; the tool only reads them.
+4. **Check the items arrived.** *Overview* lists every item with its type and length,
+   and under *Sources* any problems (e.g. a file that couldn't be read). After putting
+   new files into a folder you added earlier, click *Re-scan sources*.
+5. **Hand out participant codes.** A participant code is just a short label you give
    each annotator, e.g. `R01`, `R02`. There is no account or password: whoever types
    a code works as that annotator. Keep a list of who has which code; avoid names or
    e-mail addresses.
-5. **Let annotators work** on the annotator page (on this computer, or see
+6. **Let annotators work** on the annotator page (on this computer, or see
    [Several raters on different computers](#several-raters-on-different-computers)).
    *Overview* shows how many items each annotator has completed.
-6. **Look at the results** in the *Results* tab and **download** the tables and clips in
+7. **Look at the results** in the *Results* tab and **download** the tables and clips in
    the *Export & import* tab (see [Results, exports and clips](#results-exports-and-clips)).
 
 Your data are stored in the `data_dir` folder named in the config (by default
@@ -163,9 +175,26 @@ from the admin page, before deleting or moving anything.
 3. The first time you use a code, you are asked for your **age** and **gender**; then
    click *Start*. Next time, the same code takes you straight back to where you were.
 
+**Choosing an item** (projects with `item_selection: choose`)
+
+After signing in you see the list of items:
+
+- The buttons **All / Video / Audio / Text** show only that kind of material; the
+  status menu and the search box narrow the list further.
+- **Annotate** opens an item; **Continue** reopens one you started. Items you have
+  submitted are marked *Submitted ✓*. *Enough annotators* means other annotators
+  have already rated it as often as needed.
+- **+ Add files** (if available) adds a folder, individual files or a link, as
+  described in step 3 of the researcher guide.
+- While annotating, **← All items** (top left) takes you back to the list. Your
+  saved segments stay; you can continue later.
+
+In projects with `item_selection: random`, there is no list: the next item opens
+automatically, in random order.
+
 **The annotation screen**
 
-- **Top bar**: the item's name, how many items you have done and how many remain, the
+- **Top bar**: *← All items* (choose mode), the item's name, your progress, the
   *Instructions* button (definitions of all variables and the rating scale), your code
   and *Log out*.
 - **Left**: the video, audio (with waveform) or text, with play controls, the playback
@@ -207,8 +236,9 @@ change it, and click *Update segment*, or *Delete segment*. *Clear* empties the 
   text, scroll to the end. The bar at the bottom shows how far you are.
 - If the item contains no personality information at all, tick
   *No personality information in this item* and explain why.
-- Click **Submit item & continue**. A submitted item can no longer be changed, and
-  the next item opens. When there are none left, you see *All done*.
+- Click **Submit item** (*Submit item & continue* with random assignment). A submitted
+  item can no longer be changed. You return to the list, or, with random assignment,
+  the next item opens; when there are none left, you see *All done*.
 
 You can stop at any time by closing the browser tab: saved segments are kept, and an
 unsaved half-filled form is restored when you return with the same code.
@@ -216,11 +246,35 @@ unsaved half-filled form is restored when you return with the same code.
 **Keyboard shortcuts** (when you are not typing in a field): `Space` play/pause ·
 `←`/`→` 1 s · `Shift`+`←`/`→` 0.1 s · `[` set start · `]` set end · `P` preview.
 
-Annotators only ever see their own annotations. Items come one at a time in random
-order; nobody gets the same item twice, and items with the fewest annotations are
-offered first so that annotations stay evenly spread.
+Annotators only ever see their own annotations, and nobody can annotate the same item
+twice. With random assignment, items with the fewest annotations are offered first so
+that annotations stay evenly spread.
+
+Files in formats browsers can't play (e.g. `.avi`) are converted the first time someone
+opens them. This takes a few seconds to a minute per file, and the page says so; after
+that the converted copy is reused.
 
 ![Annotating text](docs/text_annotate.png)
+
+## Supported formats
+
+| Type | Plays/opens directly | Converted automatically (first time it's opened) |
+|---|---|---|
+| Video | `.mp4` `.m4v` `.webm` `.ogv` | `.avi` `.mov` `.mkv` `.wmv` `.mpg` `.mpeg` `.flv` `.3gp` `.mts` `.m2ts` `.ts` `.vob` → MP4 |
+| Audio | `.mp3` `.wav` `.m4a` `.aac` `.ogg` `.oga` `.opus` `.flac` | `.wma` `.aif` `.aiff` `.amr` `.ac3` `.mka` → M4A |
+| Text | `.txt` `.md` | text is read from `.docx` `.pdf` `.odt` `.rtf` `.html`/`.htm` |
+
+- The type of each item follows from its file extension.
+- Converted copies are kept in `data_dir/converted`; the original file is never changed.
+  Clips are always cut from the original.
+- MP4 with H.264 video and AAC audio is the safest format: it plays everywhere without
+  conversion. If you control the recordings, use that.
+- **Text from documents**: the tool shows and stores the plain text (no layout, images or
+  tables). Scanned PDFs without a text layer can't be read; run OCR first or use a
+  Word/text version. Older `.doc` (Word 97–2003) files aren't supported: save them as
+  `.docx`. Texts can also come from a CSV with one text per row (`text_csv` source).
+- Other files in a folder (images, spreadsheets, `.xyz`, Office lock files `~$…`) are
+  ignored.
 
 ## Configuration
 
@@ -230,8 +284,10 @@ Restart the tool after editing it.
 
 | Setting | Meaning |
 |---|---|
-| `modality` | `video`, `audio` or `text`; one modality per project |
-| `sources` | where items come from (see below); several sources may be combined |
+| `modality` | `any` (video, audio and text mixed; the default), or only `video`, `audio` or `text` |
+| `item_selection` | `choose`: annotators pick items from a list; `random`: the tool assigns items |
+| `annotators_can_add_files` | show *+ Add files* on the annotators' item list (default `true`) |
+| `sources` | where items come from (see below); may be empty (`[]`) if you add files in the interface |
 | `annotators_per_item` | how many different annotators should rate each item |
 | `scale` | one rating scale for all variables (default 1–5) with labels |
 | `variables` | what can be rated: `id`, `label`, `group` (for menus) and a `definition` shown to annotators |
@@ -244,12 +300,19 @@ Restart the tool after editing it.
 
 ### Item sources
 
+Files added with **+ Add files** are remembered in the database and listed on the
+admin page, where they can be removed again (annotations are kept). You can also
+list sources in the config file:
+
 ```yaml
 sources:
-  - type: local                 # a folder on this computer
-    path: ./my_videos
+  - type: local                 # a folder (or a single file) on this computer
+    path: C:/Users/you/Documents/interviews
     recursive: false            # also scan sub-folders
     pattern: "*.mp4"            # optional filter
+
+  - type: url                   # a direct link to one file
+    url: https://example.org/interview_01.mp4
 
   - type: zenodo                # a public Zenodo record
     record: https://zenodo.org/records/1234567   # link, DOI or record number
@@ -261,9 +324,8 @@ sources:
     text_column: text
 ```
 
-Supported files: video `.mp4 .webm .m4v .mov .ogv`; audio
-`.mp3 .wav .m4a .ogg .flac .aac .opus`; text `.txt .md`. Use MP4 (H.264/AAC) for video;
-it plays in every browser.
+On Windows, write paths in the config with forward slashes (`C:/Users/...`) or in
+single quotes (`'C:\Users\...'`); in the *Add files* dialog you can paste them as they are.
 
 The item id is the file name without extension. Items are scanned at start-up and with
 **Re-scan sources** on the admin page. Files that disappear are hidden, never deleted,
@@ -295,7 +357,7 @@ The **admin page** has three tabs:
 | File | One row per | Key columns |
 |---|---|---|
 | `annotations_long.csv` | rating | `annotator_code`, `item_id`, `segment_id`, `start_s`, `end_s` (video/audio) or `char_start`, `char_end`, `span_text` (text), `variable`, `score`, `explanation`, `notes`, timestamps, `instance_id` |
-| `coverage_long.csv` | item × variable × time bin (or word) | `n_annotators`, `mean_score`, `sd_score`, `n_low`/`n_mid`/`n_high` (relative to the scale midpoint), `annotators` |
+| `coverage_long.csv` | item × variable × time bin (or word); a `modality` column tells which | `n_annotators`, `mean_score`, `sd_score`, `n_low`/`n_mid`/`n_high` (relative to the scale midpoint), `annotators` |
 | `peak_segments.csv` | stretch with ≥ *n* raters | `start_s`/`end_s` (or `start_char`/`end_char` + `span_text`), `max_n_annotators`, `mean_score`, `n_ratings`, `annotators` |
 | `assignments.csv` | annotator × item | status, watched proportion / reading time, no-information flag and explanation |
 | `annotators.csv` | annotator | code, age, gender |
@@ -372,6 +434,9 @@ across all of them.
 | `No module named personality_annotator` | You are not in the tool's folder: `cd` into it first (the folder that contains `README.md`). |
 | `No module named fastapi` (or another package) | Run `pip install -r requirements.txt` again in the tool's folder. |
 | The browser doesn't open | Copy the address printed in the Anaconda Prompt (e.g. `http://127.0.0.1:8765/`) into your browser. |
+| A file is missing from the item list | Check its format in [Supported formats](#supported-formats); for documents, see the error under *Sources* on the admin page. |
+| "Could not open the file dialog" | Paste the folder path into the *Add files* dialog instead (in File Explorer: click the address bar and copy). |
+| The first opening of an `.avi`/`.mov` file is slow | It is being converted once; later openings are immediate. |
 | *Overview* shows 0 items or an error under *Sources* | Check the `path` or Zenodo link in your config, then click *Re-scan sources*. Relative paths are relative to the config file's folder. |
 | A video doesn't play | Use MP4 (H.264 video, AAC audio). Other formats may not play in every browser. |
 | The annotator page says *All done* immediately | Every item already has enough annotators or was done by this code. Check *Overview*, or raise `annotators_per_item`. |
@@ -382,7 +447,7 @@ across all of them.
 
 - Local only: no central server, no live synchronisation between computers (use full
   export/import).
-- Sources: local folders and public Zenodo records. OSF, Yoda (WebDAV) and other
+- Sources: local folders and files, public Zenodo records and direct links. OSF, Yoda (WebDAV) and other
   private storage are planned; the source code is structured so they can be added in
   `personality_annotator/sources.py`.
 - One shared rating scale for all variables.
@@ -399,7 +464,9 @@ personality_annotator/
   app.py           FastAPI app: annotator API, admin API, media streaming
   config.py        config.yaml loading and validation
   db.py            SQLite schema (UUID ids, audit log of every change)
-  sources.py       local / Zenodo / text_csv sources, syncing items
+  sources.py       local / Zenodo / url / text_csv sources, "Add files", syncing items
+  formats.py       supported formats, conversion (ffmpeg), text extraction
+  picker.py        native folder/file dialog
   assignment.py    which item an annotator gets next
   analysis.py      coverage and peak computation (pure Python)
   exports.py       CSV/JSON exports, importing another computer's export

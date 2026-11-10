@@ -46,6 +46,11 @@ def _pause_if_frozen() -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["--pick"]:  # native file dialog, used by the packaged program
+        from .picker import main as pick_main
+        pick_main(argv[1] if len(argv) > 1 else "folder")
+        return
     ap = argparse.ArgumentParser(prog="personality-annotator", description=__doc__)
     ap.add_argument("--config", "-c", help="Path to config.yaml (default: ./config.yaml)")
     ap.add_argument("--host", default="127.0.0.1",

@@ -45,7 +45,7 @@
   cfg.gender_options.forEach(o => g.add(new Option(o, o)));
   const age = document.getElementById("age");
   age.min = cfg.min_age; age.max = cfg.max_age;
-  try { await PA.api("/api/me"); location.href = "/annotate"; return; } catch (_) {}
+  if ((await PA.api("/api/session")).code) { location.href = "/annotate"; return; }
   const demo = document.getElementById("demo");
   document.getElementById("code").addEventListener("input", () => demo.classList.add("hidden"));
   document.getElementById("form").addEventListener("submit", async (e) => {

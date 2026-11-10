@@ -111,5 +111,112 @@ const PA = (() => {
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
-  return { api, fmtTime, parseTime, toast, esc, varColor, varLabel, tokenize, renderText, download, PALETTE };
+  const TYPE_LABEL = { video: "Video", audio: "Audio", text: "Text" };
+  const TYPE_ICON = { video: "▶", audio: "♪", text: "¶" };
+
+  const FORMATS_HTML = `
+    <strong>Video</strong>: .mp4 .m4v .webm .ogv play directly; .avi .mov .mkv .wmv .mpg .mpeg .flv .3gp .mts .ts are converted automatically the first time they are opened.<br>
+    <strong>Audio</strong>: .mp3 .wav .m4a .aac .ogg .opus .flac play directly; .wma .aif .aiff .amr are converted.<br>
+    <strong>Text</strong>: .txt .md, and text is read from .docx .pdf .odt .rtf .html (scanned PDFs without a text layer can't be read).`;
+
+  // "Add files" dialog shared by the annotator and admin pages.
+  // onDone(report) is called after files were added.
+  function addFilesDialog(onDone, { isLocal = true, asAdmin = false } = {}) {
+    let bg = document.getElementById("addFilesModal");
+    if (bg) bg.remove();
+    bg = document.createElement("div");
+    bg.className = "modal-bg"; bg.id = "addFilesModal";
+    bg.innerHTML = `
+      <div class="card modal stack">
+        <div class="row" style="justify-content:space-between"><h1 style="margin:0">Add files</h1>
+          <button class="ghost" data-close>Close ✕</button></div>
+        <div class="tabs">
+          <button data-pane="local" class="on">From this computer</button>
+          <button data-pane="link">From a link</button>
+        </div>
+        <div data-panel="local" class="stack">
+          ${isLocal ? `<p class="small muted" style="margin:0">Choose a folder (every supported file in it is added) or individual files. The files stay where they are; the tool only reads them.</p>
+          <div class="row"><button class="primary" data-pick="folder">Choose a folder…</button><button data-pick="files">Choose files…</button></div>
+          <div><label class="field">…or paste the path of a folder or file</label>
+            <div class="row" style="flex-wrap:nowrap"><input type="text" data-path placeholder="C:\\Users\\you\\Documents\\interviews"><button data-add-path>Add</button></div></div>
+          <label class="check small"><input type="checkbox" data-recursive> include sub-folders</label>`
+          : `<p class="small">Files on a computer can only be added on the computer that runs the tool. Use a link instead.</p>`}
+        </div>
+        <div data-panel="link" class="stack hidden">
+          <div><label class="field">Zenodo record or direct link to a file</label>
+            <div class="row" style="flex-wrap:nowrap"><input type="text" data-url placeholder="https://zenodo.org/records/1234567  or  https://…/interview_01.mp4"><button class="primary" data-add-url>Add</button></div></div>
+          <p class="small muted" style="margin:0">A Zenodo record link adds every supported file in the record (public records only). Any other link must point directly to one file.</p>
+        </div>
+        <div data-result class="small hidden"></div>
+        <details class="small muted"><summary>Supported formats</summary><p>${FORMATS_HTML}</p></details>
+      </div>`;
+    document.body.appendChild(bg);
+    const q = (sel) => bg.querySelector(sel);
+    const close = () => bg.remove();
+    q("[data-close]").onclick = close;
+    bg.onclick = (e) => { if (e.target === bg) close(); };
+    bg.querySelectorAll("[data-pane]").forEach(b => b.onclick = () => {
+      bg.querySelectorAll("[data-pane]").forEach(x => x.classList.toggle("on", x === b));
+      bg.querySelectorAll("[data-panel]").forEach(p => p.classList.toggle("hidden", p.dataset.panel !== b.dataset.pane));
+    });
+    const busy = (on) => bg.querySelectorAll("button").forEach(b => { if (!b.dataset.close) b.disabled = on; });
+    const showResult = (html, isErr) => {
+      const r = q("[data-result]");
+      r.innerHTML = html; r.classList.remove("hidden");
+      r.style.color = isErr ? "var(--danger)" : "";
+    };
+    async function add(bodies) {
+      busy(true);
+      showResult("Adding… (large folders or Zenodo records can take a moment)");
+      let added = 0, found = 0, lastReport = null;
+      const errs = [];
+      for (const body of bodies) {
+        try {
+          const r = await api("/api/sources", { json: { ...body, as_admin: asAdmin } });
+          lastReport = r.report;
+          added += r.report.added; found += r.report.source_files;
+          errs.push(...(r.report.source_file_errors || []));
+        } catch (e) { errs.push(e.message); }
+      }
+      busy(false);
+      if (lastReport) {
+        showResult(`<strong>${found} file(s) found, ${added} new item(s) added.</strong>` +
+          (errs.length ? `<br><span style="color:var(--danger)">${errs.map(esc).join("<br>")}</span>` : ""));
+        onDone && onDone(lastReport);
+        if (!errs.length) setTimeout(close, 1400);
+      } else {
+        showResult(errs.map(esc).join("<br>"), true);
+      }
+    }
+    if (isLocal) {
+      bg.querySelectorAll("[data-pick]").forEach(b => b.onclick = async () => {
+        busy(true);
+        showResult("A file dialog has opened (it may be behind this browser window)…");
+        let paths = [];
+        try { paths = (await api("/api/pick", { json: { kind: b.dataset.pick, as_admin: asAdmin } })).paths; }
+        catch (e) { busy(false); showResult(esc(e.message), true); return; }
+        busy(false);
+        if (!paths.length) { showResult("Nothing chosen."); return; }
+        const rec = q("[data-recursive]").checked;
+        add(paths.map(p => ({ type: "local", path: p, recursive: rec })));
+      });
+      q("[data-add-path]").onclick = () => {
+        const p = q("[data-path]").value.trim();
+        if (!p) return showResult("Paste a folder or file path first.", true);
+        add([{ type: "local", path: p, recursive: q("[data-recursive]").checked }]);
+      };
+      q("[data-path]").onkeydown = (e) => { if (e.key === "Enter") q("[data-add-path]").click(); };
+    } else {
+      bg.querySelector('[data-pane="link"]').click();
+    }
+    q("[data-add-url]").onclick = () => {
+      const u = q("[data-url]").value.trim();
+      if (!u) return showResult("Paste a link first.", true);
+      add([{ type: "url", url: u }]);
+    };
+    q("[data-url]").onkeydown = (e) => { if (e.key === "Enter") q("[data-add-url]").click(); };
+  }
+
+  return { api, fmtTime, parseTime, toast, esc, varColor, varLabel, tokenize, renderText, download, PALETTE,
+           TYPE_LABEL, TYPE_ICON, FORMATS_HTML, addFilesDialog };
 })();

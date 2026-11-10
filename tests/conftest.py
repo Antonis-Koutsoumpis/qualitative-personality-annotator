@@ -12,8 +12,8 @@ SAMPLES = ROOT / "examples" / "sample_data"
 
 def make_config(tmp: Path, modality: str, k: int = 1, sources=None, **extra) -> Path:
     raw = yaml.safe_load((ROOT / "personality_annotator" / "config.example.yaml").read_text())
-    folder = {"video": "videos", "audio": "audio", "text": "texts"}[modality]
     if sources is None:
+        folder = {"video": "videos", "audio": "audio", "text": "texts"}[modality]
         dst = tmp / folder
         shutil.copytree(SAMPLES / folder, dst)
         sources = [{"type": "local", "path": str(dst)}]

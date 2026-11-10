@@ -8,13 +8,10 @@ from typing import Any
 
 import yaml
 
-MODALITIES = ("video", "audio", "text")
+from .formats import BY_MODALITY as EXTENSIONS  # noqa: F401  (re-exported)
 
-EXTENSIONS = {
-    "video": {".mp4", ".webm", ".m4v", ".mov", ".ogv"},
-    "audio": {".mp3", ".wav", ".m4a", ".ogg", ".oga", ".flac", ".aac", ".opus"},
-    "text": {".txt", ".md"},
-}
+MODALITIES = ("video", "audio", "text")
+SOURCE_TYPES = ("local", "zenodo", "url", "text_csv")
 
 
 class ConfigError(ValueError):
@@ -33,7 +30,9 @@ class Variable:
 class Config:
     path: Path
     project_name: str
-    modality: str
+    modality: str                 # video | audio | text | any
+    item_selection: str           # choose | random
+    annotators_can_add_files: bool
     sources: list[dict[str, Any]]
     variables: list[Variable]
     scale_min: int
@@ -54,6 +53,10 @@ class Config:
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
+    def modalities(self) -> tuple[str, ...]:
+        return MODALITIES if self.modality == "any" else (self.modality,)
+
+    @property
     def variable_ids(self) -> list[str]:
         return [v.id for v in self.variables]
 
@@ -66,6 +69,9 @@ class Config:
         return {
             "project_name": self.project_name,
             "modality": self.modality,
+            "modalities": list(self.modalities),
+            "item_selection": self.item_selection,
+            "annotators_can_add_files": self.annotators_can_add_files,
             "variables": [v.__dict__ for v in self.variables],
             "scale": {
                 "min": self.scale_min,
@@ -99,30 +105,36 @@ def load_config(path: str | os.PathLike) -> Config:
         raw = yaml.safe_load(fh) or {}
     base = path.parent
 
-    modality = str(raw.get("modality", "video")).lower()
-    if modality not in MODALITIES:
-        raise ConfigError(f"modality must be one of {MODALITIES}, got {modality!r}")
+    modality = str(raw.get("modality", "any")).lower()
+    if modality not in MODALITIES + ("any",):
+        raise ConfigError(f"modality must be video, audio, text or any, got {modality!r}")
+    item_selection = str(raw.get("item_selection", "choose")).lower()
+    if item_selection not in ("choose", "random"):
+        raise ConfigError("item_selection must be 'choose' or 'random'.")
 
     sources = raw.get("sources") or []
-    if not isinstance(sources, list) or not sources:
-        raise ConfigError("Config needs at least one entry under 'sources'.")
+    if not isinstance(sources, list):
+        raise ConfigError("'sources' must be a list (it may be empty: files can also be "
+                          "added from the interface).")
     norm_sources = []
     for i, s in enumerate(sources):
         if not isinstance(s, dict) or "type" not in s:
             raise ConfigError(f"sources[{i}] must be a mapping with a 'type'.")
         s = dict(s)
         s["type"] = str(s["type"]).lower()
-        if s["type"] not in ("local", "zenodo", "text_csv"):
-            raise ConfigError(f"sources[{i}].type must be local, zenodo or text_csv.")
+        if s["type"] not in SOURCE_TYPES:
+            raise ConfigError(f"sources[{i}].type must be one of {', '.join(SOURCE_TYPES)}.")
         if s["type"] in ("local",) and "path" not in s:
-            raise ConfigError(f"sources[{i}] (local) needs 'path'.")
+            raise ConfigError(f"sources[{i}] (local) needs 'path' (a folder or a file).")
         if s["type"] == "local":
             s["path"] = str(_resolve(base, s["path"]))
         if s["type"] == "zenodo" and "record" not in s:
             raise ConfigError(f"sources[{i}] (zenodo) needs 'record' (link, DOI or id).")
+        if s["type"] == "url" and "url" not in s:
+            raise ConfigError(f"sources[{i}] (url) needs 'url' (a direct link to a file).")
         if s["type"] == "text_csv":
-            if modality != "text":
-                raise ConfigError("text_csv sources are only valid when modality is 'text'.")
+            if "text" not in (MODALITIES if modality == "any" else (modality,)):
+                raise ConfigError("text_csv sources need modality 'text' or 'any'.")
             if "path" not in s and "url" not in s:
                 raise ConfigError(f"sources[{i}] (text_csv) needs 'path' or 'url'.")
             if "path" in s:
@@ -163,6 +175,8 @@ def load_config(path: str | os.PathLike) -> Config:
         path=path,
         project_name=str(raw.get("project_name", "Personality annotation")),
         modality=modality,
+        item_selection=item_selection,
+        annotators_can_add_files=bool(raw.get("annotators_can_add_files", True)),
         sources=norm_sources,
         variables=variables,
         scale_min=smin,

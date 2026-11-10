@@ -18,10 +18,11 @@ from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse, PlainTe
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import analysis, assignment, exports, extract
+from . import analysis, assignment, exports, extract, formats, picker
 from .config import Config, load_config
 from .db import Database, new_id, now_iso
-from .sources import HTTP_TIMEOUT, sync_items
+from .sources import (HTTP_TIMEOUT, add_source, all_sources, normalise_new_source,
+                      remove_source, source_label, sync_items)
 
 STATIC = Path(__file__).parent / "static"
 ANN_COOKIE = "pa_annotator"
@@ -53,12 +54,34 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
     db = Database(config.data_dir / "annotations.sqlite")
     cache_dir = config.data_dir / "media_cache"
     work_dir = config.data_dir / "tmp"
+    converted_dir = config.data_dir / "converted"
     admin_password = os.environ.get("ANNOTATOR_ADMIN_PASSWORD", "")
     state: dict[str, Any] = {"sync": None}
 
+    def fill_durations_in_background() -> None:
+        """Read the duration of local media files that don't have one yet."""
+        import threading
+
+        def work():
+            with db.connect() as con:
+                rows = con.execute("SELECT item_id, location FROM items WHERE active=1 AND "
+                                   "modality!='text' AND duration_s IS NULL AND "
+                                   "source_type='local'").fetchall()
+            for r in rows:
+                d = formats.probe_duration(Path(r["location"]))
+                if d:
+                    with db.connect() as con:
+                        con.execute("UPDATE items SET duration_s=? WHERE item_id=? AND "
+                                    "duration_s IS NULL", (d, r["item_id"]))
+        if not state.get("probing"):
+            state["probing"] = True
+            t = threading.Thread(target=lambda: (work(), state.update(probing=False)), daemon=True)
+            t.start()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        state["sync"] = {"at": now_iso(), **sync_items(db, config)}
+        state["sync"] = sync_items(db, config)
+        fill_durations_in_background()
         state["client"] = httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True)
         yield
         await state["client"].aclose()
@@ -84,6 +107,30 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
         tok = request.cookies.get(ADMIN_COOKIE, "")
         if not hmac.compare_digest(tok, admin_token(admin_password)):
             raise HTTPException(401, "Admin login required")
+
+    def is_admin(request: Request) -> bool:
+        if not admin_password:
+            return True
+        return hmac.compare_digest(request.cookies.get(ADMIN_COOKIE, ""), admin_token(admin_password))
+
+    def is_local(request: Request) -> bool:
+        host = request.client.host if request.client else ""
+        return host in ("127.0.0.1", "::1", "localhost", "testclient")
+
+    def may_add_files(request: Request, as_admin: bool = False) -> str:
+        """Who is adding files (for the audit log); raises if not allowed.
+
+        The admin page sends as_admin=True; the annotator page doesn't, so the
+        `annotators_can_add_files` switch also works without an admin password.
+        """
+        if as_admin:
+            if is_admin(request) and (admin_password or is_local(request)):
+                return "admin"
+            raise HTTPException(401, "Admin login required")
+        if request.cookies.get(ANN_COOKIE) and config.annotators_can_add_files:
+            return annotator_of(request)
+        raise HTTPException(403, "Adding files is switched off for annotators "
+                                 "(annotators_can_add_files in the config).")
 
     def own_assignment(con, aid: str, code: str, must_be_active: bool = True):
         a = con.execute("SELECT * FROM assignments WHERE id=?", (aid,)).fetchone()
@@ -176,9 +223,20 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
                 "filename": item["filename"], "duration_s": item["duration_s"],
                 "media_url": None if item["modality"] == "text" else f"/media/{item['item_id']}",
                 "text": item["text"] if item["modality"] == "text" else None,
+                "needs_conversion": item["modality"] != "text" and formats.needs_conversion(
+                    item["filename"] or item["location"]),
             },
             "segments": segs,
         }
+
+    @app.get("/api/session")
+    def session(request: Request):
+        code = request.cookies.get(ANN_COOKIE)
+        if code:
+            with db.connect() as con:
+                if not con.execute("SELECT 1 FROM annotators WHERE code=?", (code,)).fetchone():
+                    code = None
+        return {"code": code}
 
     @app.get("/api/me")
     def me(request: Request):
@@ -199,6 +257,123 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
             if aid is None:
                 return {"done": True, "progress": prog}
             return {"done": False, "progress": prog, **assignment_payload(con, aid)}
+
+    @app.get("/api/items")
+    def list_items(request: Request):
+        """Items for the chooser, with this annotator's status for each."""
+        code = annotator_of(request)
+        k, cutoff = config.annotators_per_item, assignment._cutoff(config.reservation_timeout_h)
+        with db.connect() as con:
+            mine = {r["item_id"]: dict(r) for r in con.execute(
+                "SELECT a.item_id, a.id, a.status, a.watched_proportion, a.completed_at, "
+                "(SELECT COUNT(*) FROM segments s WHERE s.assignment_id=a.id AND s.deleted=0) "
+                "AS n_segments FROM assignments a WHERE a.annotator_code=?", (code,))}
+            counts = assignment.item_counts(con, config.reservation_timeout_h)
+            rows = con.execute("SELECT item_id, modality, filename, source_type, duration_s, "
+                               "LENGTH(text) AS n_chars FROM items WHERE active=1 "
+                               "ORDER BY filename COLLATE NOCASE, item_id").fetchall()
+        items = []
+        for r in rows:
+            m = mine.get(r["item_id"])
+            others = counts.get(r["item_id"], 0) - (1 if m and m["status"] in ("active", "completed") else 0)
+            status = ("completed" if m and m["status"] == "completed" else
+                      "open" if m and m["status"] == "active" else
+                      "full" if counts.get(r["item_id"], 0) >= k else "new")
+            items.append({"item_id": r["item_id"], "modality": r["modality"],
+                          "filename": r["filename"], "source_type": r["source_type"],
+                          "duration_s": r["duration_s"], "n_chars": r["n_chars"],
+                          "status": status, "n_segments": m["n_segments"] if m else 0,
+                          "others": max(0, others), "assignment_id": m["id"] if m else None})
+        return {"items": items, "k": k, "selection": config.item_selection,
+                "can_add_files": config.annotators_can_add_files,
+                "is_local": is_local(request)}
+
+    @app.post("/api/items/{item_id}/open")
+    def open_item(item_id: str, request: Request):
+        code = annotator_of(request)
+        if config.item_selection != "choose":
+            raise HTTPException(403, "In this project items are assigned automatically.")
+        with db.connect(immediate=True) as con:
+            item = con.execute("SELECT * FROM items WHERE item_id=? AND active=1",
+                               (item_id,)).fetchone()
+            if item is None:
+                raise HTTPException(404, "Item not found")
+            a = con.execute("SELECT * FROM assignments WHERE annotator_code=? AND item_id=?",
+                            (code, item_id)).fetchone()
+            ts = now_iso()
+            if a is not None:
+                if a["status"] == "completed":
+                    raise HTTPException(409, "You have already submitted this item.")
+                con.execute("UPDATE assignments SET status='active', last_activity_at=? "
+                            "WHERE id=?", (ts, a["id"]))
+                aid = a["id"]
+            else:
+                n = assignment.item_counts(con, config.reservation_timeout_h).get(item_id, 0)
+                if n >= config.annotators_per_item:
+                    raise HTTPException(409, "This item already has enough annotators.")
+                aid = new_id()
+                con.execute("INSERT INTO assignments(id, annotator_code, item_id, status, "
+                            "reserved_at, last_activity_at, instance_id) VALUES (?,?,?,?,?,?,?)",
+                            (aid, code, item_id, "active", ts, ts, db.instance_id))
+                db.audit(con, "open", code, aid, {"item_id": item_id})
+            prog = assignment.annotator_progress(con, code, config.annotators_per_item,
+                                                 config.reservation_timeout_h)
+            return {"done": False, "progress": prog, **assignment_payload(con, aid)}
+
+    # ------------------------------------------------------------ sources ("Add files")
+
+    def sources_payload() -> list[dict]:
+        out = []
+        for s in all_sources(db, config):
+            out.append({"id": s.get("_id"), "origin": s["_origin"], "type": s["type"],
+                        "label": source_label(s), "recursive": bool(s.get("recursive")),
+                        "added_at": s.get("_added_at"), "added_by": s.get("_added_by")})
+        return out
+
+    @app.get("/api/sources")
+    def get_sources(request: Request, as_admin: bool = False):
+        may_add_files(request, as_admin)
+        return {"sources": sources_payload(), "sync": state["sync"]}
+
+    @app.post("/api/sources")
+    def post_source(request: Request, body: dict = Body(...)):
+        who = may_add_files(request, bool(body.get("as_admin")))
+        try:
+            spec = normalise_new_source(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        if spec["type"] == "local" and not is_local(request):
+            raise HTTPException(403, "Local folders can only be added on the computer running "
+                                     "the tool.")
+        try:
+            report = add_source(db, config, spec, who)
+        except Exception as exc:
+            raise HTTPException(400, str(exc))
+        state["sync"] = {k: v for k, v in report.items() if not k.startswith("source_")}
+        fill_durations_in_background()
+        return {"report": report, "sources": sources_payload()}
+
+    @app.delete("/api/sources/{source_id}")
+    def delete_source(source_id: str, request: Request):
+        require_admin(request)
+        try:
+            state["sync"] = remove_source(db, config, source_id, "admin")
+        except KeyError:
+            raise HTTPException(404, "Source not found (sources from config.yaml can only be "
+                                     "removed there).")
+        return {"sync": state["sync"], "sources": sources_payload()}
+
+    @app.post("/api/pick")
+    def pick_dialog(request: Request, body: dict = Body(...)):
+        may_add_files(request, bool(body.get("as_admin")))
+        if not is_local(request):
+            raise HTTPException(403, "The file dialog only works on the computer running "
+                                     "the tool.")
+        try:
+            return {"paths": picker.pick(str(body.get("kind", "folder")))}
+        except Exception as exc:
+            raise HTTPException(500, "Could not open the file dialog here; paste the path "
+                                     f"instead. ({exc})")
 
     @app.post("/api/assignments/{aid}/progress")
     def progress(aid: str, request: Request, body: dict = Body(...)):
@@ -392,6 +567,20 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
                 or not admin_password):
             raise HTTPException(401, "Login required")
         item = _item(item_id)
+        if formats.needs_conversion(item["filename"] or item["location"]):
+            conv = formats.converted_path(item_id, item["modality"], converted_dir)
+            if not conv.exists():
+                import anyio
+
+                def _convert():
+                    src = extract.media_path(item, cache_dir)
+                    return formats.convert_for_browser(src, item_id, item["modality"],
+                                                       converted_dir)
+                try:
+                    conv = await anyio.to_thread.run_sync(_convert)
+                except Exception as exc:
+                    raise HTTPException(500, str(exc))
+            return FileResponse(conv)
         if item["source_type"] == "local":
             p = Path(item["location"])
             if not p.exists():
@@ -444,7 +633,7 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
         k = config.annotators_per_item
         with db.connect() as con:
             items = [dict(r) for r in con.execute(
-                """SELECT i.item_id, i.filename, i.source_type, i.duration_s, i.active,
+                """SELECT i.item_id, i.modality, i.filename, i.source_type, i.duration_s, i.active,
                           SUM(a.status='completed') AS n_completed,
                           SUM(a.status='active') AS n_open,
                           SUM(a.status='completed' AND a.no_info=1) AS n_no_info
@@ -473,7 +662,8 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
             "k": k, "instance_id": db.instance_id, "config_path": str(config.path),
             "data_dir": str(config.data_dir),
             "password_protected": bool(admin_password),
-            "sources": config.sources, "sync": state["sync"],
+            "sources": sources_payload(), "sync": state["sync"],
+            "item_selection": config.item_selection,
             "totals": {
                 "items": len(active),
                 "target_annotations": len(active) * k,
@@ -488,7 +678,8 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
     @app.post("/api/admin/sync")
     def admin_sync(request: Request):
         require_admin(request)
-        state["sync"] = {"at": now_iso(), **sync_items(db, config)}
+        state["sync"] = sync_items(db, config)
+        fill_durations_in_background()
         return state["sync"]
 
     def _annot_list(s: str | None) -> list[str]:
@@ -574,10 +765,13 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
             items = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM items")}
         if not include_open:
             all_ratings = [r for r in all_ratings if r["assignment_status"] == "completed"]
-        text_mode = config.modality == "text"
-        sk, ek = ("char_start", "char_end") if text_mode else ("start_s", "end_s")
+
+        def keys(item_id):
+            return (("char_start", "char_end") if items[item_id]["modality"] == "text"
+                    else ("start_s", "end_s"))
 
         def rating_out(r):
+            sk, ek = keys(r["item_id"])
             return {"annotator_code": r["annotator_code"], "variable": r["variable"],
                     "score": r["score"], "explanation": r["explanation"], "notes": r["notes"],
                     "segment_start": r[sk], "segment_end": r[ek],
@@ -595,6 +789,7 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
                     by_seg.setdefault(r["segment_id"], []).append(r)
             for sid, rs in by_seg.items():
                 r0 = rs[0]
+                sk, ek = keys(r0["item_id"])
                 segs.append({"item_id": r0["item_id"], "start": r0[sk], "end": r0[ek],
                              "label": f"{r0['annotator_code']}__seg{sid[:8]}",
                              "kind": "annotator_segment", "segment_id": sid,
@@ -612,6 +807,8 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
                     regions = [p for p in regions if p["variable"] == body["variable"]]
             for reg in regions:
                 s, e = float(reg["start"]), float(reg["end"])
+                sk, ek = keys(reg["item_id"])
+                text_mode = sk == "char_start"
                 rs = [r for r in all_ratings if r["item_id"] == reg["item_id"]
                       and (not reg.get("variable") or r["variable"] == reg["variable"])
                       and r[sk] is not None and float(r[sk]) < e
@@ -636,8 +833,8 @@ def create_app(config_path: str | os.PathLike) -> FastAPI:
         fd, tmp = tempfile.mkstemp(suffix=".zip", dir=work_dir)
         os.close(fd)
         try:
-            extract.build_zip(segs, items, config.modality, cache_dir, work_dir, Path(tmp))
-        except extract.ExtractionError as exc:
+            extract.build_zip(segs, items, cache_dir, work_dir, Path(tmp))
+        except (extract.ExtractionError, RuntimeError) as exc:
             Path(tmp).unlink(missing_ok=True)
             raise HTTPException(500, str(exc))
         name = f"segments_{mode}_{time.strftime('%Y%m%d-%H%M%S')}.zip"

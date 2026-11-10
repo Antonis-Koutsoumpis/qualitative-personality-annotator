@@ -179,8 +179,11 @@ def test_list_zenodo_with_mock_api():
         return httpx.Response(404)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    vids = sources.list_zenodo({"record": "https://zenodo.org/records/42"}, "video", client)
+    errs = []
+    vids = sources.list_zenodo({"record": "https://zenodo.org/records/42"}, ("video",), client, errs)
     assert [v.item_id for v in vids] == ["clip_one", "clip2"]
     assert vids[0].location == "https://zenodo.org/records/42/files/clip%20one.mp4?download=1"
-    txt = sources.list_zenodo({"record": "42"}, "text", client)
-    assert txt[0].text == "a\nb"
+    txt = sources.list_zenodo({"record": "42"}, ("text",), client, errs)
+    assert txt[0].text == "a\nb" and txt[0].modality == "text"
+    both = sources.list_zenodo({"record": "42"}, ("video", "audio", "text"), client, errs)
+    assert sorted(x.modality for x in both) == ["text", "video", "video"]

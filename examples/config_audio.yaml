@@ -6,24 +6,42 @@
 
 project_name: "Pilot - audio"
 
-# What annotators work with: video | audio | text   (one modality per project)
+# Which kinds of material this project uses: any | video | audio | text
+# "any" decides per file from its extension, and annotators can filter by type.
 modality: audio
 
-# Where the items come from. You can list several sources.
+# How annotators get items:
+#   choose - they pick items from a list (useful for pilots and training)
+#   random - the tool hands out items in random order, spreading annotations
+#            evenly until every item has `annotators_per_item` annotators
+item_selection: random
+
+# Show the "Add files" button to annotators (on the computer running the tool).
+# The researcher can always add files on the admin page.
+annotators_can_add_files: true
+
+# Where the items come from. Files can also be added in the interface with
+# "Add files" (a folder or files on this computer, or a link), so this list may
+# be empty: `sources: []`. Supported formats: see the README.
 sources:
-  # A folder on this computer (video: .mp4 .webm .m4v .mov .ogv;
-  # audio: .mp3 .wav .m4a .ogg .flac .aac .opus; text: .txt .md)
   - type: local
     path: ./sample_data/audio
-    # recursive: true        # also look in sub-folders
-    # pattern: "*.mp4"       # only files matching this pattern
+  # A folder (or a single file) on this computer:
+  # - type: local
+  #   path: C:/Users/me/Documents/my_videos
+  #   recursive: true        # also look in sub-folders
+  #   pattern: "*.mp4"       # only files matching this pattern
 
   # A public Zenodo record: paste the record link, the DOI or the number.
   # - type: zenodo
   #   record: https://zenodo.org/records/1234567
   #   pattern: "*.mp4"
 
-  # Text only: a CSV with one text per row (local path or url)
+  # A direct link to one file:
+  # - type: url
+  #   url: https://example.org/interviews/interview_01.mp4
+
+  # Texts in a CSV with one text per row (local path or url):
   # - type: text_csv
   #   path: ./transcripts.csv
   #   id_column: item_id

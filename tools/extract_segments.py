@@ -28,7 +28,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from personality_annotator.config import EXTENSIONS  # noqa: E402
-from personality_annotator.extract import _fmt, cut  # noqa: E402
+from personality_annotator.extract import _fmt, clip_extension, cut  # noqa: E402
+from personality_annotator.formats import extract_text  # noqa: E402
 from personality_annotator.sources import normalize_text, safe_id  # noqa: E402
 
 
@@ -82,16 +83,16 @@ def main(argv=None):
             return texts[item_id]
         p = media.get(item_id)
         if p and p.suffix.lower() in EXTENSIONS["text"]:
-            return normalize_text(p.read_text(encoding="utf-8"))
+            return normalize_text(extract_text(p.read_bytes(), p.name))
         return None
 
     # Build the list of segments to cut.
     segments = []
     if is_peaks:
         ann = read_csv(Path(args.annotations)) if args.annotations else []
-        text_mode = "start_char" in cols
-        sk, ek = ("char_start", "char_end") if text_mode else ("start_s", "end_s")
         for r in rows:
+            text_mode = r.get("start_char") not in (None, "")
+            sk, ek = ("char_start", "char_end") if text_mode else ("start_s", "end_s")
             if args.variable and r["variable"] != args.variable:
                 continue
             if int(float(r["max_n_annotators"])) < args.min_raters:
@@ -134,7 +135,7 @@ def main(argv=None):
                 if src is None:
                     raise FileNotFoundError(f"no media file found for item {item}")
                 modality = "video" if src.suffix.lower() in EXTENSIONS["video"] else "audio"
-                ext = ".mp4" if modality == "video" else src.suffix.lower()
+                ext = clip_extension(src.name, modality)
                 stem = f"{item}__{seg['label']}__{_fmt(seg['start'])}-{_fmt(seg['end'])}"
                 clip = out / f"{stem}{ext}"
                 cut(src, seg["start"], seg["end"], clip, modality)

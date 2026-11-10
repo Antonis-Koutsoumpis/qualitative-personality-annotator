@@ -9,6 +9,7 @@
 </head>
 <body>
 <header class="topbar">
+  <button class="ghost small hidden" id="btnBack" title="Back to the list of items">← All items</button>
   <span class="brand" id="project">Personality annotation</span>
   <span class="muted small" id="itemName"></span>
   <span class="spacer"></span>
@@ -21,6 +22,31 @@
 <main class="page" id="main">
   <div id="loading" class="muted">Loading…</div>
 
+  <section id="chooser" class="stack hidden">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h1 style="margin:0">Choose an item to annotate</h1>
+        <p class="small muted" style="margin:.2rem 0 0">Pick any item from the list. Items you have submitted are marked ✓ and can't be changed.</p>
+      </div>
+      <button class="primary hidden" id="btnAddFiles">+ Add files</button>
+    </div>
+    <div class="card stack">
+      <div class="row">
+        <div class="tabs" id="typeTabs"></div>
+        <select id="statusFilter" style="width:auto">
+          <option value="">All statuses</option>
+          <option value="new">Not started</option>
+          <option value="open">In progress</option>
+          <option value="completed">Submitted</option>
+        </select>
+        <input type="text" id="search" placeholder="Search by name…" style="max-width:16rem">
+        <span class="small muted" id="listCount"></span>
+      </div>
+      <div class="table-wrap"><table id="itemList"></table></div>
+      <div id="listEmpty" class="hidden muted small"></div>
+    </div>
+  </section>
+
   <section id="done" class="card hidden" style="max-width:640px;margin:6vh auto;text-align:center">
     <h1>All done — thank you!</h1>
     <p class="muted">There are no more items for you to annotate right now.</p>
@@ -32,6 +58,7 @@
     <section class="stack sticky">
       <div id="mediaArea" class="hidden">
         <div class="player-wrap" id="videoWrap"><video id="video" playsinline preload="auto"></video></div>
+        <div class="small muted hidden" id="mediaStatus" style="margin-top:.4rem"></div>
         <div class="audio-wrap hidden" id="audioWrap">
           <div id="waveform"></div>
           <audio id="audio" preload="auto"></audio>

@@ -236,3 +236,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* ---------- login ---------- */
 .login { max-width: 420px; margin: 9vh auto; }
 .login .card { padding: 1.6rem; }
+
+/* ---------- item chooser ---------- */
+#itemList tbody tr { cursor: pointer; }
+#itemList tbody tr:hover { background: var(--surface-2); }
+#itemList tr.done { color: var(--ink-2); }
+.type-ico { display: inline-flex; width: 1.6rem; height: 1.6rem; border-radius: 6px; align-items: center; justify-content: center;
+  background: var(--surface-2); border: 1px solid var(--line); font-size: .8rem; margin-right: .5rem; color: var(--ink-2); }
+.badge { font-size: .76rem; padding: .1rem .5rem; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); white-space: nowrap; }
+.badge.open { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.badge.completed { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.badge.full { color: var(--ink-3); }

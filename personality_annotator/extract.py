@@ -62,6 +62,8 @@ def cut(src: Path, start: float, end: float, out: Path, modality: str) -> None:
     if modality == "video":
         cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart"]
+    elif out.suffix.lower() == ".m4a":
+        cmd += ["-vn", "-c:a", "aac", "-b:a", "160k"]
     else:
         cmd += ["-vn"]
     cmd.append(str(out))
@@ -70,11 +72,20 @@ def cut(src: Path, start: float, end: float, out: Path, modality: str) -> None:
         raise ExtractionError(f"ffmpeg failed for {src.name}: {res.stderr.strip()[:500]}")
 
 
+def clip_extension(filename: str, modality: str) -> str:
+    """Video clips are MP4; audio keeps its format if browsers play it, else M4A."""
+    if modality == "video":
+        return ".mp4"
+    from .formats import AUDIO_NATIVE
+    ext = Path(filename.split("?")[0]).suffix.lower()
+    return ext if ext in AUDIO_NATIVE else ".m4a"
+
+
 def _fmt(t: float) -> str:
     return f"{float(t):08.2f}".replace(".", "s")
 
 
-def build_zip(segments: list[dict[str, Any]], items: dict[str, dict], modality: str,
+def build_zip(segments: list[dict[str, Any]], items: dict[str, dict],
               cache_dir: Path, work_dir: Path, out_zip: Path) -> Path:
     """segments: dicts with item_id, start, end, label, ratings (list of dicts).
 
@@ -85,6 +96,7 @@ def build_zip(segments: list[dict[str, Any]], items: dict[str, dict], modality: 
     with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as zf:
         for n, seg in enumerate(segments, 1):
             item = items[seg["item_id"]]
+            modality = item["modality"]
             label = seg.get("label") or "segment"
             if modality == "text":
                 stem = f"{seg['item_id']}__{label}__chars{int(seg['start'])}-{int(seg['end'])}"
@@ -92,8 +104,7 @@ def build_zip(segments: list[dict[str, Any]], items: dict[str, dict], modality: 
                 zf.writestr(f"{stem}.txt", text)
                 clip_name = f"{stem}.txt"
             else:
-                ext = ".mp4" if modality == "video" else (
-                    Path(item.get("filename") or "x.wav").suffix or ".wav")
+                ext = clip_extension(item.get("filename") or "", modality)
                 stem = f"{seg['item_id']}__{label}__{_fmt(seg['start'])}-{_fmt(seg['end'])}"
                 clip = work_dir / f"{n:05d}{ext}"
                 cut(media_path(item, cache_dir), seg["start"], seg["end"], clip, modality)

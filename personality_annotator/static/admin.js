@@ -33,11 +33,11 @@
   async function loadOverview() {
     ov = await PA.api("/api/admin/overview");
     $("project").textContent = ov.project_name + " · admin";
-    $("modalityChip").textContent = ov.modality;
+    $("modalityChip").textContent = (ov.modality === "any" ? "video · audio · text" : ov.modality) +
+      (ov.item_selection === "choose" ? " · annotators choose items" : " · random assignment");
     renderOverview();
     fillItemSelect();
     $("binS").value = cfg.coverage_bin_s;
-    $("binWrap").classList.toggle("hidden", ov.modality === "text");
     $("eVar").innerHTML = `<option value="">all variables</option>` +
       cfg.variables.map(v => `<option value="${PA.esc(v.id)}">${PA.esc(v.label)}</option>`).join("");
     $("paths").innerHTML = `Config file: <span class="mono">${PA.esc(ov.config_path)}</span><br>
@@ -65,12 +65,22 @@
       stat(ov.annotators.length, "annotators");
 
     const s = ov.sync || {};
-    $("sources").innerHTML = ov.sources.map(src =>
-      `<div><span class="chip">${PA.esc(src.type)}</span> <span class="mono">${PA.esc(src.path || src.record || src.url)}</span></div>`).join("") +
+    $("sources").innerHTML = (ov.sources.length ? ov.sources.map(src =>
+      `<div class="row" style="margin:.25rem 0"><span class="chip">${PA.esc(src.type)}</span> <span class="mono">${PA.esc(src.label)}</span>
+        ${src.recursive ? '<span class="small muted">(with sub-folders)</span>' : ""}
+        <span class="small muted">${src.origin === "config" ? "· from config file" : `· added ${PA.esc((src.added_at || "").slice(0, 10))}${src.added_by ? " by " + PA.esc(src.added_by) : ""}`}</span>
+        ${src.origin === "added" ? `<button class="ghost small danger" data-rmsrc="${PA.esc(src.id)}" title="Remove this source (annotations are kept)">Remove</button>` : ""}</div>`).join("")
+      : `<p class="muted" style="margin:0">No sources yet. Click <strong>+ Add files</strong>.</p>`) +
       `<p class="muted" style="margin:.5rem 0 0">Last scan ${PA.esc(s.at || "")}: ${s.found ?? 0} files found, ${s.added ?? 0} new, ${s.active_items ?? 0} active items` +
       (s.deactivated ? `, ${s.deactivated} no longer found (kept but hidden)` : "") + `.</p>` +
       (s.errors?.length ? `<p style="color:var(--danger);margin:.4rem 0 0">${s.errors.map(PA.esc).join("<br>")}</p>` : "") +
       (s.text_kept_because_annotated?.length ? `<p class="muted">Text changed at the source but kept (already annotated): ${s.text_kept_because_annotated.map(PA.esc).join(", ")}</p>` : "");
+
+    $("sources").querySelectorAll("[data-rmsrc]").forEach(b => b.onclick = async () => {
+      if (!confirm("Remove this source? Its items are hidden from annotators; existing annotations are kept.")) return;
+      try { await PA.api(`/api/sources/${b.dataset.rmsrc}`, { method: "DELETE" }); await loadOverview(); PA.toast("Source removed"); }
+      catch (e) { PA.toast(e.message, true); }
+    });
 
     $("annTable").innerHTML = `<thead><tr><th>Code</th><th class="num">Age</th><th>Gender</th><th class="num">Completed</th><th class="num">Open</th><th class="num">Still available</th><th class="num">Ratings</th><th>Joined</th></tr></thead><tbody>` +
       (ov.annotators.length ? ov.annotators.map(a => `<tr><td><strong>${PA.esc(a.code)}</strong></td><td class="num">${a.age ?? ""}</td><td>${PA.esc(a.gender || "")}</td>
@@ -78,11 +88,11 @@
         <td class="small muted">${PA.esc((a.created_at || "").slice(0, 16).replace("T", " "))}</td></tr>`).join("")
         : `<tr><td colspan="8" class="muted">Nobody has logged in yet.</td></tr>`) + `</tbody>`;
 
-    $("itemTable").innerHTML = `<thead><tr><th>Item</th><th>Source</th><th class="num">Duration</th><th>Completed</th><th class="num">Open</th><th class="num">No info</th><th></th></tr></thead><tbody>` +
+    $("itemTable").innerHTML = `<thead><tr><th>Item</th><th>Type</th><th>Source</th><th class="num">Duration</th><th>Completed</th><th class="num">Open</th><th class="num">No info</th><th></th></tr></thead><tbody>` +
       ov.items.map(i => {
         const pct = Math.min(100, (i.n_completed / ov.k) * 100);
         return `<tr class="${i.active ? "" : "muted"}"><td><strong>${PA.esc(i.item_id)}</strong>${i.active ? "" : " <span class='small'>(not found in sources)</span>"}<div class="small muted">${PA.esc(i.filename || "")}</div></td>
-          <td>${PA.esc(i.source_type)}</td><td class="num">${i.duration_s ? PA.fmtTime(i.duration_s) : "—"}</td>
+          <td>${PA.TYPE_LABEL[i.modality] || PA.esc(i.modality)}</td><td>${PA.esc(i.source_type)}</td><td class="num">${i.duration_s ? PA.fmtTime(i.duration_s) : "—"}</td>
           <td style="min-width:120px"><div class="small">${i.n_completed} / ${ov.k}</div><div class="progress"><div style="width:${pct}%"></div></div></td>
           <td class="num">${i.n_open}</td><td class="num">${i.n_no_info}</td>
           <td><button class="small" data-view="${PA.esc(i.item_id)}">View results</button></td></tr>`;
@@ -108,7 +118,8 @@
     const q = new URLSearchParams();
     if ($("inclOpen").checked) q.set("include_open", "true");
     if (selectedRaters) q.set("annotators", selectedRaters.join(","));
-    if (ov.modality !== "text" && +$("binS").value > 0) q.set("bin_s", $("binS").value);
+    const it = ov.items.find(i => i.item_id === currentItem);
+    if (it && it.modality !== "text" && +$("binS").value > 0) q.set("bin_s", $("binS").value);
     return q;
   }
 
@@ -119,6 +130,7 @@
     try {
       res = await PA.api(`/api/admin/items/${encodeURIComponent(itemId)}/results?${resultQuery()}`);
     } catch (e) { PA.toast(e.message, true); return; }
+    $("binWrap").classList.toggle("hidden", res.item.modality === "text");
     renderRaterFilter();
     renderMedia();
     renderHeat();
@@ -332,6 +344,8 @@
   // ------------------------------------------------------------- bindings
   function bind() {
     document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+    $("btnAddFiles").onclick = () => PA.addFilesDialog(async () => { await loadOverview(); res = null; },
+      { isLocal: ["127.0.0.1", "localhost", "[::1]"].includes(location.hostname), asAdmin: true });
     $("btnSync").onclick = async () => {
       $("btnSync").disabled = true;
       try { await PA.api("/api/admin/sync", { json: {} }); await loadOverview(); PA.toast("Sources re-scanned"); }
@@ -351,7 +365,7 @@
     $("colorBy").onchange = renderHeat;
     $("textVar").onchange = renderHeat;
     $("btnExtractItemPeaks").onclick = () => extract({ mode: "peaks", item_id: currentItem, threshold: +$("thr").value || 1,
-      include_open: $("inclOpen").checked, annotators: selectedRaters || [], bin_s: ov.modality === "text" ? null : +$("binS").value });
+      include_open: $("inclOpen").checked, annotators: selectedRaters || [], bin_s: res?.item.modality === "text" ? null : +$("binS").value });
 
     document.querySelectorAll("[data-export]").forEach(b => b.onclick = async () => {
       const q = new URLSearchParams();

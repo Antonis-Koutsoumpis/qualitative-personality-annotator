@@ -37,15 +37,108 @@
       if (e.status === 401) { location.href = "/"; return; }
       PA.toast(e.message, true); return;
     }
-    modality = cfg.modality;
     $("project").textContent = cfg.project_name;
+    $("btnSubmit").textContent = cfg.item_selection === "choose" ? "Submit item" : "Submit item & continue";
     buildHelp();
     bindStatic();
-    await loadCurrent();
+    if (cfg.item_selection === "choose") await showList(); else await loadCurrent();
+  }
+
+  const chooseMode = () => cfg.item_selection === "choose";
+
+  // ------------------------------------------------------------- item chooser
+  let listItems = [], typeFilter = "";
+
+  async function showList() {
+    await leaveItem();
+    $("loading").classList.remove("hidden");
+    let resp;
+    try { resp = await PA.api("/api/items"); }
+    catch (e) { if (e.status === 401) location.href = "/"; else PA.toast(e.message, true); return; }
+    $("loading").classList.add("hidden");
+    listItems = resp.items;
+    $("btnAddFiles").classList.toggle("hidden", !resp.can_add_files);
+    $("btnAddFiles").onclick = () => PA.addFilesDialog(() => showList(), { isLocal: resp.is_local });
+    $("chooser").classList.remove("hidden");
+    $("btnBack").classList.add("hidden");
+    $("itemName").textContent = "";
+    const done = listItems.filter(i => i.status === "completed").length;
+    $("progressText").textContent = `${done} submitted · ${listItems.length} item(s)`;
+    renderTypeTabs();
+    renderList();
+  }
+
+  function renderTypeTabs() {
+    const counts = { "": listItems.length };
+    listItems.forEach(i => counts[i.modality] = (counts[i.modality] || 0) + 1);
+    const types = cfg.modalities.filter(m => cfg.modalities.length === 1 || counts[m]);
+    if (typeFilter && !counts[typeFilter]) typeFilter = "";
+    const tabs = (types.length > 1 ? [["", "All"]] : []).concat(types.map(m => [m, PA.TYPE_LABEL[m]]));
+    $("typeTabs").innerHTML = tabs.map(([m, l]) =>
+      `<button data-type="${m}" class="${m === typeFilter ? "on" : ""}">${m ? PA.TYPE_ICON[m] + " " : ""}${l} <span class="muted">${counts[m] || 0}</span></button>`).join("");
+    $("typeTabs").querySelectorAll("button").forEach(b => b.onclick = () => { typeFilter = b.dataset.type; renderTypeTabs(); renderList(); });
+  }
+
+  function renderList() {
+    const st = $("statusFilter").value, qtxt = $("search").value.trim().toLowerCase();
+    const rows = listItems.filter(i => (!typeFilter || i.modality === typeFilter) && (!st || i.status === st)
+      && (!qtxt || (i.filename || i.item_id).toLowerCase().includes(qtxt)));
+    $("listCount").textContent = `${rows.length} shown`;
+    const label = { new: "Not started", open: "In progress", completed: "Submitted ✓", full: "Enough annotators" };
+    $("itemList").innerHTML = `<thead><tr><th>Item</th><th>Type</th><th class="num">Length</th><th>Status</th><th></th></tr></thead><tbody>` +
+      rows.map(i => {
+        const act = i.status === "completed" || i.status === "full" ? "" :
+          `<button class="small ${i.status === "open" ? "" : "primary"}" data-open="${PA.esc(i.item_id)}">${i.status === "open" ? "Continue" : "Annotate"}</button>`;
+        return `<tr class="${act ? "" : "done"}" ${act ? `data-open="${PA.esc(i.item_id)}"` : ""}>
+          <td><span class="type-ico">${PA.TYPE_ICON[i.modality]}</span>${PA.esc(i.filename || i.item_id)}
+            ${i.source_type !== "local" ? `<span class="small muted"> · ${PA.esc(i.source_type)}</span>` : ""}</td>
+          <td>${PA.TYPE_LABEL[i.modality]}</td>
+          <td class="num">${i.modality === "text" ? (i.n_chars ? `${Math.max(1, Math.round(i.n_chars / 6))} words` : "") : (i.duration_s ? PA.fmtTime(i.duration_s).replace(/\.\d$/, "") : "")}</td>
+          <td><span class="badge ${i.status}">${label[i.status]}</span>${i.n_segments ? ` <span class="small muted">${i.n_segments} segment(s)</span>` : ""}</td>
+          <td>${act}</td></tr>`;
+      }).join("") + `</tbody>`;
+    $("itemList").querySelectorAll("[data-open]").forEach(el => el.onclick = (e) => { e.stopPropagation(); openItem(el.dataset.open); });
+    const empty = $("listEmpty");
+    empty.classList.toggle("hidden", rows.length > 0);
+    empty.innerHTML = listItems.length ? "No items match these filters."
+      : (cfg.annotators_can_add_files ? "No items yet. Click <strong>+ Add files</strong> to add a folder, files or a link." : "No items yet. Ask the researcher to add files.");
+  }
+
+  async function openItem(itemId) {
+    try {
+      const resp = await PA.api(`/api/items/${encodeURIComponent(itemId)}/open`, { json: {} });
+      $("chooser").classList.add("hidden");
+      $("btnBack").classList.remove("hidden");
+      data = resp;
+      showProgress(resp.progress);
+      setupItem();
+      window.scrollTo(0, 0);
+    } catch (e) { PA.toast(e.message, true); }
+  }
+
+  // Stop playback and timers of the item being left (its work stays saved).
+  async function leaveItem() {
+    stopTimers();
+    if (data) await flushProgress();
+    teardownMaterial();
+    data = null;
+    $("workspace").classList.add("hidden");
+    $("submitbar").classList.add("hidden");
+    $("done").classList.add("hidden");
+  }
+
+  function teardownMaterial() {
+    previewing = false;
+    if (ws) { try { ws.destroy(); } catch (_) {} ws = null; wsRegions = null; draftRegion = null; }
+    ["video", "audio"].forEach(id => { const m = $(id); m.pause(); m.removeAttribute("src"); m.load(); });
+    media = null;
+    words = [];
+    $("textPanel").textContent = "";
+    ["mediaArea", "textArea", "mediaBounds", "textBounds", "mediaStatus"].forEach(id => $(id).classList.add("hidden"));
   }
 
   async function loadCurrent() {
-    stopTimers();
+    await leaveItem();
     $("loading").classList.remove("hidden");
     $("workspace").classList.add("hidden");
     $("submitbar").classList.add("hidden");
@@ -66,10 +159,13 @@
   }
 
   function showProgress(p) {
-    $("progressText").textContent = `${p.completed} done · ${p.remaining} to go`;
+    $("progressText").textContent = chooseMode() ? `${p.completed} submitted`
+      : `${p.completed} done · ${p.remaining} to go`;
   }
 
   function setupItem() {
+    teardownMaterial();
+    modality = data.item.modality;
     editingId = null; textSel = null; previewing = false; pending = []; lastT = null;
     watched = mergeIv(data.assignment.watched_intervals || []);
     scrolledToEnd = data.assignment.scrolled_to_end;
@@ -126,7 +222,13 @@
       media.src = data.item.media_url;
     }
     media.playbackRate = +$("speed").value;
-    media.onloadedmetadata = () => { renderTimeline(); updateCompletion(); updateTime(); flushProgress(); };
+    const ms = $("mediaStatus");
+    ms.textContent = data.item.needs_conversion
+      ? "Preparing this file for the browser (converting it once; this can take a minute the first time)…"
+      : "Loading…";
+    ms.classList.remove("hidden");
+    media.onloadeddata = () => ms.classList.add("hidden");
+    media.onloadedmetadata = () => { ms.classList.add("hidden"); renderTimeline(); updateCompletion(); updateTime(); flushProgress(); };
     media.onplay = () => { lastT = media.currentTime; $("btnPlay").textContent = "❚❚ Pause"; };
     media.onpause = () => { trackTick(true); lastT = null; $("btnPlay").textContent = "▶ Play"; updateCompletion(); renderTimeline(); flushProgress(); };
     media.onseeking = () => { trackTick(); lastT = null; };
@@ -142,7 +244,12 @@
       renderPlayhead();
       updateCompletion();
     };
-    media.onerror = () => PA.toast("The media file could not be loaded. Check the source (local file or Zenodo link).", true);
+    media.onerror = () => {
+      if (!media || !media.getAttribute("src")) return;   // ignore errors from teardown
+      ms.textContent = "This file could not be loaded or converted. Check that the file still exists (or the link works).";
+      ms.classList.remove("hidden");
+      PA.toast("The media file could not be loaded.", true);
+    };
   }
 
   // Record what has actually been played (seeking does not count).
@@ -615,9 +722,9 @@
         json: { no_info: $("noInfo").checked, no_info_explanation: $("noInfoText").value } });
       localStorage.removeItem(draftKey());
       if (media) { media.pause(); }
-      PA.toast("Submitted — loading the next item");
       window.scrollTo(0, 0);
-      await loadCurrent();
+      if (chooseMode()) { PA.toast("Submitted"); await showList(); }
+      else { PA.toast("Submitted — loading the next item"); await loadCurrent(); }
     } catch (e) { PA.toast(e.message, true); }
   }
 
@@ -631,12 +738,12 @@
       <p style="white-space:pre-wrap">${PA.esc(cfg.instructions)}</p>
       <h3>How to mark a segment</h3>
       <ol class="small">
-        ${cfg.modality === "text"
-          ? "<li>Select the words with your mouse.</li>"
-          : "<li>Play the item. Press <kbd>[</kbd> at the start of a relevant moment and <kbd>]</kbd> at its end (or type the times, or use the Now buttons" + (cfg.modality === "audio" ? ", or drag across the waveform" : "") + ").</li><li>Use <em>Preview loop</em> to check the segment.</li>"}
+        ${cfg.modalities.includes("video") || cfg.modalities.includes("audio")
+          ? "<li><strong>Video/audio:</strong> play the item. Press <kbd>[</kbd> at the start of a relevant moment and <kbd>]</kbd> at its end (or type the times, or use the Now buttons; for audio you can also drag across the waveform). Use <em>Preview loop</em> to check the segment.</li>" : ""}
+        ${cfg.modalities.includes("text") ? "<li><strong>Text:</strong> select the words with your mouse.</li>" : ""}
         <li>Choose a variable, a score and explain your rating. Add more variables if the segment shows more than one.</li>
         <li>Click <em>Save segment</em>. Segments may overlap.</li>
-        <li>When you have ${cfg.modality === "text" ? "read the whole text" : "played the whole item"}, click <em>Submit item</em>.</li>
+        <li>When you have played the whole item (or read the whole text), click <em>Submit item</em>.</li>
       </ol>
       <h3>Rating scale</h3><p class="small">${sc.min}–${sc.max}${scaleTxt ? ": " + scaleTxt : ""}</p>
       <h3>Variables</h3>
@@ -646,6 +753,12 @@
 
   // ------------------------------------------------------------- bindings
   function bindStatic() {
+    $("btnBack").onclick = async () => {
+      if (editorDirty() && !editingId && !confirm("Leave this item? Your unsaved segment form is kept as a draft, and saved segments stay.")) return;
+      await showList();
+    };
+    $("statusFilter").onchange = renderList;
+    $("search").oninput = renderList;
     $("btnHelp").onclick = () => $("helpModal").classList.remove("hidden");
     $("btnHelpClose").onclick = () => $("helpModal").classList.add("hidden");
     $("helpModal").onclick = (e) => { if (e.target.id === "helpModal") $("helpModal").classList.add("hidden"); };

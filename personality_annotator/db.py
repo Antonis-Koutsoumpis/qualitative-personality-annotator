@@ -86,6 +86,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
     object_id TEXT,
     payload TEXT
 );
+CREATE TABLE IF NOT EXISTS sources (    -- sources added from the interface
+    id TEXT PRIMARY KEY,
+    spec TEXT NOT NULL,                  -- JSON, same shape as a config source
+    added_at TEXT NOT NULL,
+    added_by TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_assign_item ON assignments(item_id);
 CREATE INDEX IF NOT EXISTS idx_seg_assign ON segments(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_rating_seg ON ratings(segment_id);
