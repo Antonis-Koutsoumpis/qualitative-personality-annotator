@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+*.spec
+*.egg-info/
+.venv/
+venv/
+# Local data: databases, caches and exports stay on your computer
+annotation_data*/
+config.yaml
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personality-annotator"
+version = "0.1.0"
+description = "Manual personality annotation of video, audio and text segments by multiple raters"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+    "imageio-ffmpeg>=0.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyinstaller>=6.6"]
+
+[project.scripts]
+personality-annotator = "personality_annotator.__main__:main"
+
+[tool.setuptools]
+packages = ["personality_annotator"]
+
+[tool.setuptools.package-data]
+personality_annotator = ["static/*", "static/vendor/*", "config.example.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

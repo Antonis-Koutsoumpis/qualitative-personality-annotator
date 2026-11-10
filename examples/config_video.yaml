@@ -1,0 +1,135 @@
+# ---------------------------------------------------------------------------
+# Personality Annotator - project configuration
+# Edit this file, then (re)start the tool. Relative paths are resolved from
+# the folder this file is in.
+# ---------------------------------------------------------------------------
+
+project_name: "Pilot - video"
+
+# What annotators work with: video | audio | text   (one modality per project)
+modality: video
+
+# Where the items come from. You can list several sources.
+sources:
+  # A folder on this computer (video: .mp4 .webm .m4v .mov .ogv;
+  # audio: .mp3 .wav .m4a .ogg .flac .aac .opus; text: .txt .md)
+  - type: local
+    path: ./sample_data/videos
+    # recursive: true        # also look in sub-folders
+    # pattern: "*.mp4"       # only files matching this pattern
+
+  # A public Zenodo record: paste the record link, the DOI or the number.
+  # - type: zenodo
+  #   record: https://zenodo.org/records/1234567
+  #   pattern: "*.mp4"
+
+  # Text only: a CSV with one text per row (local path or url)
+  # - type: text_csv
+  #   path: ./transcripts.csv
+  #   id_column: item_id
+  #   text_column: text
+
+# Download remote (Zenodo) media once and keep a copy in data_dir/media_cache.
+# false = stream through the tool each time (saves disk space).
+cache_media: false
+
+# How many different annotators should rate each item.
+annotators_per_item: 1
+
+# Rating scale shared by all variables.
+scale:
+  min: 1
+  max: 5
+  labels:
+    1: Very low
+    2: Low
+    3: Average
+    4: High
+    5: Very high
+
+# The variables annotators can rate. 'group' is used to group them in menus.
+variables:
+  - id: HEX_H
+    label: Honesty-Humility
+    group: HEXACO domains
+    definition: >
+      Sincerity, fairness, modesty and lack of greed. High: avoids manipulation,
+      does not feel entitled to special status. Low: flatters to get ahead,
+      bends rules for gain, feels superior.
+  - id: HEX_E
+    label: Emotionality
+    group: HEXACO domains
+    definition: >
+      Fearfulness, anxiety, dependence on others' support and sentimentality.
+      High: worries, seeks emotional support, feels strong empathy. Low: tough,
+      unworried, emotionally detached.
+  - id: HEX_X
+    label: eXtraversion
+    group: HEXACO domains
+    definition: >
+      Social self-esteem, social boldness, sociability and liveliness. High:
+      confident, energetic, enjoys addressing and interacting with people.
+      Low: reserved, quiet, less lively in social situations.
+  - id: HEX_A
+    label: Agreeableness
+    group: HEXACO domains
+    definition: >
+      Forgiveness, gentleness, flexibility and patience. High: lenient,
+      accommodating, slow to anger. Low: critical, stubborn, quick to anger.
+  - id: HEX_C
+    label: Conscientiousness
+    group: HEXACO domains
+    definition: >
+      Organisation, diligence, perfectionism and prudence. High: structured,
+      hard-working, careful. Low: disorganised, avoids effort, impulsive.
+  - id: HEX_O
+    label: Openness to Experience
+    group: HEXACO domains
+    definition: >
+      Aesthetic appreciation, inquisitiveness, creativity and unconventionality.
+      High: curious, imaginative, interested in ideas. Low: conventional,
+      little intellectual curiosity.
+  # Examples of other constructs - uncomment to use:
+  # - id: NARC
+  #   label: Narcissism
+  #   group: Other
+  #   definition: Grandiosity, need for admiration, sense of entitlement.
+  # - id: DEP
+  #   label: Depressive mood
+  #   group: Other
+  #   definition: Signs of low mood, hopelessness or loss of interest.
+  # Facet-level example:
+  # - id: HEX_X_SocBold
+  #   label: Social Boldness
+  #   group: HEXACO facets - eXtraversion
+  #   definition: Comfort in a variety of social situations, e.g. speaking up.
+
+# When may an annotator submit an item?
+completion:
+  min_watched_proportion: 0.95   # video/audio: share of the item actually played
+  require_scroll_to_end: true    # text: must have scrolled to the end
+  min_reading_time_s: 0          # text: minimum seconds on the page (0 = off)
+
+# Analysis: video/audio coverage is counted per time bin (seconds).
+# Text coverage is always counted per word.
+coverage_bin_s: 1.0
+
+# An opened but unfinished item is released for others after this many hours.
+reservation_timeout_h: 48
+
+demographics:
+  min_age: 16
+  max_age: 100
+  gender_options: [Woman, Man, Non-binary, Other, Prefer not to say]
+
+# Shown to annotators on the Instructions panel (plain text).
+instructions: |
+  Watch (or listen to / read) each item in full. Whenever you notice a moment
+  that tells you something about the person's personality, mark it as a
+  segment and rate one or more variables for it. Explain each rating in your
+  own words. A segment can carry several ratings, and segments may overlap.
+  If an item contains no personality information, tick the box at the bottom
+  and explain why.
+
+# Where the database, exports and caches are stored.
+data_dir: ./annotation_data_video

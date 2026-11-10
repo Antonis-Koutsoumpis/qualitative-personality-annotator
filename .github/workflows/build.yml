@@ -1,0 +1,79 @@
+# Runs the tests, and builds stand-alone executables for Windows, macOS and Linux.
+# Executables are attached to the workflow run (Actions tab -> run -> Artifacts),
+# and to a GitHub Release when you push a tag like v0.1.0.
+name: test-and-build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - run: python tools/make_sample_data.py
+      - run: pytest -q
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: PersonalityAnnotator-windows
+            sep: ";"
+          - os: macos-latest
+            name: PersonalityAnnotator-macos
+            sep: ":"
+          - os: ubuntu-latest
+            name: PersonalityAnnotator-linux
+            sep: ":"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - name: Build executable
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --onefile --name PersonalityAnnotator \
+            --add-data "personality_annotator/static${{ matrix.sep }}personality_annotator/static" \
+            --add-data "personality_annotator/config.example.yaml${{ matrix.sep }}personality_annotator" \
+            --collect-all imageio_ffmpeg \
+            --collect-submodules uvicorn \
+            run_annotator.py
+      - name: Package with example config and sample data
+        shell: bash
+        run: |
+          python tools/make_sample_data.py
+          mkdir -p release/sample_data
+          cp dist/PersonalityAnnotator* release/
+          cp -r examples/sample_data/* release/sample_data/
+          sed 's#./my_videos#./sample_data/videos#' personality_annotator/config.example.yaml > release/config.yaml
+          cp README.md LICENSE release/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: release/
+      - name: Zip for release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          cd release && 7z a ../${{ matrix.name }}.zip . > /dev/null 2>&1 || zip -r ../${{ matrix.name }}.zip .
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.name }}.zip

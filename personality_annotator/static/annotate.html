@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Annotate · Personality Annotator</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand" id="project">Personality annotation</span>
+  <span class="muted small" id="itemName"></span>
+  <span class="spacer"></span>
+  <span class="small muted" id="progressText"></span>
+  <button class="ghost" id="btnHelp">Instructions</button>
+  <span class="small">Code: <strong id="me"></strong></span>
+  <button class="ghost small" id="btnLogout">Log out</button>
+</header>
+
+<main class="page" id="main">
+  <div id="loading" class="muted">Loading…</div>
+
+  <section id="done" class="card hidden" style="max-width:640px;margin:6vh auto;text-align:center">
+    <h1>All done — thank you!</h1>
+    <p class="muted">There are no more items for you to annotate right now.</p>
+    <p class="small muted" id="doneStats"></p>
+  </section>
+
+  <div id="workspace" class="grid-annotate hidden">
+    <!-- left: material -->
+    <section class="stack sticky">
+      <div id="mediaArea" class="hidden">
+        <div class="player-wrap" id="videoWrap"><video id="video" playsinline preload="auto"></video></div>
+        <div class="audio-wrap hidden" id="audioWrap">
+          <div id="waveform"></div>
+          <audio id="audio" preload="auto"></audio>
+        </div>
+        <div class="transport">
+          <button id="btnPlay" title="Play / pause (Space)">▶ Play</button>
+          <button class="small" data-step="-1" title="Back 1 s (←)">−1s</button>
+          <button class="small" data-step="-0.1" title="Back 0.1 s (Shift+←)">−0.1s</button>
+          <button class="small" data-step="0.1" title="Forward 0.1 s (Shift+→)">+0.1s</button>
+          <button class="small" data-step="1" title="Forward 1 s (→)">+1s</button>
+          <select id="speed" style="width:auto" title="Playback speed">
+            <option value="0.5">0.5×</option><option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option><option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option><option value="2">2×</option>
+          </select>
+          <span class="time" id="timeText">00:00.0 / --:--.-</span>
+        </div>
+        <div class="timeline" id="timeline" title="Click to jump. Grey line = parts you have played; bars = your segments."></div>
+        <p class="small muted" style="margin:.4rem 0 0">
+          <kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> 1 s · <kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> 0.1 s ·
+          <kbd>[</kbd> set start · <kbd>]</kbd> set end · <kbd>P</kbd> preview segment
+          <span id="audioHint" class="hidden"> · drag on the waveform to select a segment</span>
+        </p>
+      </div>
+
+      <div id="textArea" class="hidden">
+        <div class="text-panel" id="textPanel"></div>
+        <p class="small muted" style="margin:.4rem 0 0">Select words with the mouse to mark a segment (the selection snaps to whole words). Click a highlighted word to see or edit the segments covering it.</p>
+      </div>
+    </section>
+
+    <!-- right: editor + list -->
+    <aside class="stack">
+      <section class="card editor idle" id="editor">
+        <div class="row" style="justify-content:space-between">
+          <h2 id="editorTitle" style="margin:0">New segment</h2>
+          <button class="ghost small" id="btnCancel">Clear</button>
+        </div>
+
+        <div id="mediaBounds" class="stack hidden" style="margin-top:.7rem">
+          <div class="row">
+            <div>
+              <label class="field" for="startIn">Start</label>
+              <div class="row"><input class="time-input" id="startIn" type="text" placeholder="mm:ss.s">
+                <button class="small" id="btnSetStart" title="Set to current time ([)">Now</button></div>
+            </div>
+            <div>
+              <label class="field" for="endIn">End</label>
+              <div class="row"><input class="time-input" id="endIn" type="text" placeholder="mm:ss.s">
+                <button class="small" id="btnSetEnd" title="Set to current time (])">Now</button></div>
+            </div>
+          </div>
+          <div class="row">
+            <button class="small" id="btnPreview" title="Play the segment in a loop (P)">⟲ Preview loop</button>
+            <span class="small muted" id="durText"></span>
+          </div>
+        </div>
+
+        <div id="textBounds" class="hidden" style="margin-top:.7rem">
+          <label class="field">Selected text</label>
+          <div class="def quote" id="selText">Select words in the text on the left.</div>
+        </div>
+
+        <div style="margin-top:.9rem">
+          <label class="field">Ratings for this segment</label>
+          <div id="ratingRows"></div>
+          <button class="small" id="btnAddRating" style="margin-top:.6rem">+ Rate another variable</button>
+        </div>
+
+        <div class="row" style="margin-top:1rem">
+          <button class="primary" id="btnSave">Save segment</button>
+          <button class="ghost danger hidden" id="btnDelete">Delete segment</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Your segments <span class="muted" id="segCount"></span></h2>
+        </div>
+        <ul class="seg-list" id="segList" style="margin-top:.6rem"></ul>
+        <p class="small muted" id="segEmpty">No segments yet.</p>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<footer class="submitbar hidden" id="submitbar">
+  <div class="inner">
+    <div style="min-width:220px">
+      <div class="row small" style="justify-content:space-between"><span id="compText">Played 0%</span><span class="status-pill" id="compPill">Keep going</span></div>
+      <div class="progress" style="margin-top:.3rem"><div id="compBar" style="width:0%"></div></div>
+    </div>
+    <div style="flex:1;min-width:260px">
+      <label class="check small"><input type="checkbox" id="noInfo"> <span>No personality information in this item</span></label>
+      <textarea id="noInfoText" class="hidden" placeholder="Please explain why this item contains no personality information." style="margin-top:.4rem;min-height:2.4rem"></textarea>
+    </div>
+    <button class="primary" id="btnSubmit" disabled>Submit item &amp; continue</button>
+  </div>
+</footer>
+
+<div class="modal-bg hidden" id="helpModal">
+  <div class="card modal stack">
+    <div class="row" style="justify-content:space-between"><h1 style="margin:0">Instructions</h1><button class="ghost" id="btnHelpClose">Close ✕</button></div>
+    <div id="helpBody"></div>
+  </div>
+</div>
+
+<script src="/static/vendor/wavesurfer.min.js"></script>
+<script src="/static/vendor/regions.min.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/annotate.js"></script>
+</body>
+</html>

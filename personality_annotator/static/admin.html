@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · Personality Annotator</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand" id="project">Personality Annotator</span>
+  <span class="chip" id="modalityChip"></span>
+  <span class="spacer"></span>
+  <nav class="tabs" id="tabs">
+    <button data-tab="overview" class="on">Overview</button>
+    <button data-tab="results">Results</button>
+    <button data-tab="data">Export &amp; import</button>
+  </nav>
+  <a class="btn ghost small" href="/">Annotator view</a>
+</header>
+
+<main class="page">
+  <section id="login" class="login hidden" style="margin-top:4vh">
+    <form class="card stack" id="loginForm">
+      <h1>Admin login</h1>
+      <input type="password" id="pw" placeholder="Admin password" autofocus>
+      <button class="primary">Log in</button>
+    </form>
+  </section>
+
+  <!-- OVERVIEW -->
+  <section id="tab-overview" class="stack hidden">
+    <div class="stats" id="stats"></div>
+    <div class="card stack">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Sources</h2>
+        <button class="small" id="btnSync">Re-scan sources</button>
+      </div>
+      <div id="sources" class="small"></div>
+    </div>
+    <div class="card">
+      <h2>Annotators</h2>
+      <div class="table-wrap"><table id="annTable"></table></div>
+    </div>
+    <div class="card">
+      <h2>Items</h2>
+      <div class="table-wrap"><table id="itemTable"></table></div>
+    </div>
+    <div class="card hidden" id="noInfoCard">
+      <h2>Items marked “no personality information”</h2>
+      <div class="table-wrap"><table id="noInfoTable"></table></div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="tab-results" class="stack hidden">
+    <div class="card stack">
+      <div class="row">
+        <button class="small" id="prevItem" title="Previous item">◀</button>
+        <select id="itemSel" style="width:auto;max-width:28rem"></select>
+        <button class="small" id="nextItem" title="Next item">▶</button>
+        <label class="check small" style="margin-left:.6rem"><input type="checkbox" id="inclOpen"> include unsubmitted work</label>
+        <span id="binWrap" class="row small"><label for="binS">bin</label><input type="number" id="binS" step="0.5" min="0.1" style="width:5rem"> s</span>
+      </div>
+      <div id="raterFilter" class="small"></div>
+    </div>
+
+    <div class="grid-annotate">
+      <div class="stack">
+        <div id="rMedia"></div>
+        <div class="card stack" id="heatCard">
+          <div class="row" style="justify-content:space-between">
+            <h2 style="margin:0" id="heatTitle">Annotation coverage</h2>
+            <div class="row small">
+              <label for="colorBy">colour by</label>
+              <select id="colorBy" style="width:auto">
+                <option value="count">number of raters</option>
+                <option value="score">mean score (low ↔ high)</option>
+              </select>
+              <select id="textVar" style="width:auto" class="hidden"></select>
+            </div>
+          </div>
+          <div id="heat"></div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card stack">
+          <div class="row" style="justify-content:space-between">
+            <h2 style="margin:0">Peak segments</h2>
+            <span class="row small"><label for="thr">min. raters</label><input type="number" id="thr" value="1" min="1" style="width:4.5rem"></span>
+          </div>
+          <p class="small muted" style="margin:0">Continuous stretches where at least this many raters marked the same variable.</p>
+          <div class="table-wrap"><table id="peakTable"></table></div>
+          <button class="small" id="btnExtractItemPeaks">⇩ Extract all peaks of this item (zip)</button>
+        </div>
+        <div class="card stack">
+          <h2 style="margin:0">Individual segments</h2>
+          <div class="table-wrap"><table id="segTable"></table></div>
+        </div>
+        <div class="card hidden" id="rNoInfo"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DATA -->
+  <section id="tab-data" class="stack hidden">
+    <div class="card stack">
+      <h2>Export tables (CSV, long format)</h2>
+      <div class="row small">
+        <label class="check"><input type="checkbox" id="xOpen"> include unsubmitted work</label>
+        <label class="check"><input type="checkbox" id="xEmpty"> include empty bins / words in coverage</label>
+        <span class="row">peaks: min. raters <input type="number" id="xThr" value="1" min="1" style="width:4.5rem"></span>
+      </div>
+      <div class="row">
+        <button data-export="annotations_long.csv" class="primary">annotations_long.csv</button>
+        <button data-export="coverage_long.csv">coverage_long.csv</button>
+        <button data-export="peak_segments.csv">peak_segments.csv</button>
+        <button data-export="assignments.csv">assignments.csv</button>
+        <button data-export="annotators.csv">annotators.csv</button>
+      </div>
+      <ul class="small muted" style="margin:0;padding-left:1.1rem">
+        <li><strong>annotations_long</strong>: one row per rating — who (annotator_code, instance_id), which item, segment boundaries, variable, score, explanation, notes.</li>
+        <li><strong>coverage_long</strong>: per item × variable × time bin (or word): number of raters, mean/SD score, counts below/at/above the scale midpoint.</li>
+        <li><strong>peak_segments</strong>: continuous stretches marked by at least the chosen number of raters.</li>
+      </ul>
+    </div>
+
+    <div class="card stack">
+      <h2>Extract annotated segments</h2>
+      <p class="small muted" style="margin:0">Cuts every peak segment (all items) into its own clip / text file, each with a .json and .csv describing its ratings, plus an index.csv.</p>
+      <div class="row small">
+        <span class="row">min. raters <input type="number" id="eThr" value="1" min="1" style="width:4.5rem"></span>
+        <select id="eVar" style="width:auto"><option value="">all variables</option></select>
+        <button class="primary" id="btnExtractAll">⇩ Extract all peaks (zip)</button>
+      </div>
+    </div>
+
+    <div class="card stack">
+      <h2>Back up / merge raters</h2>
+      <p class="small" style="margin:0">Each installation keeps its own database. To combine raters who worked on different computers, have each of them download a <strong>full export</strong> and import those files here. Rows are matched by unique ids, so importing twice does no harm. Every rating keeps its annotator code and the id of the computer it came from.</p>
+      <div class="row">
+        <button data-export="full_export.json">⇩ Download full export (.json)</button>
+        <label class="btn">⇧ Import a full export… <input type="file" id="importFile" accept=".json,application/json" class="hidden"></label>
+      </div>
+      <pre id="importResult" class="small mono hidden" style="white-space:pre-wrap;margin:0"></pre>
+    </div>
+
+    <div class="card small muted" id="paths"></div>
+  </section>
+</main>
+
+<div class="tip hidden" id="tip"></div>
+<script src="/static/common.js"></script>
+<script src="/static/admin.js"></script>
+</body>
+</html>

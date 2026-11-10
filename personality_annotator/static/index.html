@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personality Annotator</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="login">
+  <div class="card stack">
+    <div>
+      <h1 id="title">Personality annotation</h1>
+      <p class="muted small" id="subtitle">Sign in with your participant code. You can leave at any time and continue later with the same code.</p>
+    </div>
+    <form id="form" class="stack" autocomplete="off">
+      <div>
+        <label class="field" for="code">Participant code</label>
+        <input type="text" id="code" maxlength="64" required autofocus placeholder="e.g. R01">
+        <p class="small muted" style="margin:.3rem 0 0">Please don't use your name or e-mail address.</p>
+      </div>
+      <div id="demo" class="stack hidden">
+        <p class="small" style="margin:0">This code is new. Before you start, please tell us:</p>
+        <div>
+          <label class="field" for="age">Age</label>
+          <input type="number" id="age" inputmode="numeric">
+        </div>
+        <div>
+          <label class="field" for="gender">Gender</label>
+          <select id="gender"><option value="">Choose…</option></select>
+        </div>
+      </div>
+      <button class="primary" type="submit" id="go">Continue</button>
+    </form>
+    <p class="small muted" style="margin:0"><a href="/admin">Researcher (admin) view</a></p>
+  </div>
+</main>
+<script src="/static/common.js"></script>
+<script>
+(async () => {
+  const cfg = await PA.api("/api/config");
+  document.getElementById("title").textContent = cfg.project_name;
+  const g = document.getElementById("gender");
+  cfg.gender_options.forEach(o => g.add(new Option(o, o)));
+  const age = document.getElementById("age");
+  age.min = cfg.min_age; age.max = cfg.max_age;
+  try { await PA.api("/api/me"); location.href = "/annotate"; return; } catch (_) {}
+  const demo = document.getElementById("demo");
+  document.getElementById("code").addEventListener("input", () => demo.classList.add("hidden"));
+  document.getElementById("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = { code: document.getElementById("code").value.trim() };
+    if (!demo.classList.contains("hidden")) { body.age = age.value; body.gender = g.value; }
+    try {
+      const r = await PA.api("/api/login", { json: body });
+      if (r.needs_demographics) {
+        demo.classList.remove("hidden");
+        document.getElementById("go").textContent = "Start";
+        age.focus();
+        return;
+      }
+      location.href = "/annotate";
+    } catch (err) { PA.toast(err.message, true); }
+  });
+})();
+</script>
+</body>
+</html>
