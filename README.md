@@ -16,17 +16,76 @@ Items can come from a local folder or a public Zenodo record.
 ## Contents
 
 - [Quick start](#quick-start)
+- [Step-by-step: running a pilot (researcher)](#step-by-step-running-a-pilot-researcher)
+- [Step-by-step: annotating (annotators)](#step-by-step-annotating-annotators)
 - [Configuration](#configuration)
-- [Annotating](#annotating)
 - [Results, exports and clips](#results-exports-and-clips)
 - [Several raters on different computers](#several-raters-on-different-computers)
 - [How annotations are counted](#how-annotations-are-counted)
+- [Troubleshooting](#troubleshooting)
 - [Limitations of this version](#limitations-of-this-version)
 - [For developers](#for-developers)
 
 ## Quick start
 
-### Option A: the ready-made program (no Python needed)
+There are two ways to run the tool. **On a university or work laptop, use Option A
+(Anaconda).** Managed laptops usually block unsigned programs (see Option B).
+
+### Option A: with Anaconda (recommended)
+
+You need [Anaconda](https://www.anaconda.com/download) or Miniconda. Many university
+laptops already have it, or offer it through the Software Center.
+
+**The first time (installation)**
+
+1. Get the code. Either:
+   - on GitHub, click the green **Code** button → **Download ZIP**, and unzip it
+     somewhere you can find it again (e.g. `Documents\qualitative-personality-annotator`); or
+   - if you have git: `git clone https://github.com/Antonis-Koutsoumpis/qualitative-personality-annotator`
+2. Open **Anaconda Prompt** (Windows: Start menu → *Anaconda Prompt*; macOS/Linux: a
+   Terminal).
+3. Go to the folder you just unzipped or cloned, for example:
+   ```
+   cd Documents\qualitative-personality-annotator
+   ```
+   (Tip: type `cd ` and drag the folder from File Explorer onto the window.)
+4. Install the required packages (only needed once):
+   ```
+   pip install -r requirements.txt
+   ```
+5. Start the tool with one of the example projects:
+   ```
+   python -m personality_annotator --config examples/config_video.yaml
+   ```
+   Your browser opens at `http://127.0.0.1:8765`.
+
+**Every time after that**
+
+Everything is already installed, so you only need steps 2, 3 and 5:
+
+```
+cd Documents\qualitative-personality-annotator
+python -m personality_annotator --config examples/config_video.yaml
+```
+
+Replace `examples/config_video.yaml` with your own config file once you have one
+(see [Configuration](#configuration)). Example configs: `config_video.yaml`,
+`config_audio.yaml`, `config_text.yaml` and `config_zenodo.yaml` in `examples/`.
+
+**Stopping the tool**: click in the Anaconda Prompt window and press `Ctrl+C`
+(or close the window). Everything has been saved; start it again with the commands
+above to continue.
+
+**Updating to a newer version**: download the ZIP again (or run `git pull` in the
+folder) and run `pip install -r requirements.txt` once more. Keep your own
+`config.yaml` and the `annotation_data` folder; they hold your settings and data.
+
+Optional: to keep the tool's packages separate from your other projects, create a
+conda environment once with `conda create -n annotator python=3.12` and
+`conda activate annotator` before step 4, and run `conda activate annotator` each time
+before starting the tool.
+
+### Option B: the ready-made program (no Python needed)
 
 1. Go to the **Actions** tab of this repository, open the latest successful
    *test-and-build* run and download the zip for your system
@@ -39,37 +98,129 @@ Items can come from a local folder or a public Zenodo record.
 
 The program is not code-signed, so your system will warn you the first time:
 
-- **Windows**: "Windows protected your PC" → *More info* → *Run anyway*.
+- **Windows (personal computer)**: "Windows protected your PC" → *More info* →
+  *Run anyway*.
+- **Windows (university/work laptop)**: if the only button is *Don't run*, your
+  organisation's policy blocks unsigned programs. Use Option A, or ask your IT
+  department to allow the program.
 - **macOS**: right-click the program → *Open* → *Open*. If macOS still refuses, run
   `xattr -d com.apple.quarantine PersonalityAnnotator` in Terminal in that folder.
   You may also need `chmod +x PersonalityAnnotator`.
 
-### Option B: run from source (Python 3.10+)
+### The two pages
 
-```bash
-git clone https://github.com/Antonis-Koutsoumpis/qualitative-personality-annotator
-cd qualitative-personality-annotator
-pip install -r requirements.txt
-python tools/make_sample_data.py           # optional: synthetic test items
-python -m personality_annotator --config examples/config_video.yaml
-```
-
-There are example configs for each modality in `examples/`
-(`config_video.yaml`, `config_audio.yaml`, `config_text.yaml`, `config_zenodo.yaml`).
-
-Useful options: `--port 8765`, `--no-browser`, and `--host 0.0.0.0` (lets other
-computers on the same network reach the tool, for supervised sessions with several
-annotators on one machine's database).
-
-Pages:
-
-| Page | Address | For |
+| Page | Address | Who uses it |
 |---|---|---|
-| Annotator login | `http://127.0.0.1:8765/` | annotators |
-| Admin | `http://127.0.0.1:8765/admin` | the researcher |
+| Annotator page | `http://127.0.0.1:8765/` | annotators |
+| Admin page | `http://127.0.0.1:8765/admin` | the researcher |
+
+If port 8765 is busy, the tool picks the next free one; the address is printed in the
+Anaconda Prompt / console window. Other options: `--port 8765`, `--no-browser`, and
+`--host 0.0.0.0` (lets other computers on the same network reach the tool, for
+supervised sessions where several annotators share one computer's database).
 
 To password-protect the admin page, set the environment variable
-`ANNOTATOR_ADMIN_PASSWORD` before starting the tool.
+`ANNOTATOR_ADMIN_PASSWORD` before starting the tool (Anaconda Prompt on Windows:
+`set ANNOTATOR_ADMIN_PASSWORD=yourpassword`; macOS/Linux: `export ...`).
+
+## Step-by-step: running a pilot (researcher)
+
+1. **Try it with the sample items.** Start the tool with
+   `examples/config_video.yaml` and annotate as a test user (see the next section).
+   The sample videos are synthetic test patterns, so you can mark anything.
+2. **Make your own project.** Copy `personality_annotator/config.example.yaml` to a new
+   file, e.g. `my_pilot.yaml`, in the main folder and edit it in any text editor:
+   - `modality`: `video`, `audio` or `text`;
+   - `sources`: the folder with your files, or your Zenodo link;
+   - `variables`: what annotators may rate (HEXACO domains are filled in; facet and
+     other examples are included as comments);
+   - `annotators_per_item`: how many raters each item needs.
+   Then start the tool with `--config my_pilot.yaml`.
+3. **Check the items arrived.** Open the admin page → *Overview*. Under *Sources* you
+   see how many files were found and any errors (e.g. a wrong folder path). The
+   *Items* table lists them. After adding files, click *Re-scan sources*.
+4. **Hand out participant codes.** A participant code is just a short label you give
+   each annotator, e.g. `R01`, `R02`. There is no account or password: whoever types
+   a code works as that annotator. Keep a list of who has which code; avoid names or
+   e-mail addresses.
+5. **Let annotators work** on the annotator page (on this computer, or see
+   [Several raters on different computers](#several-raters-on-different-computers)).
+   *Overview* shows how many items each annotator has completed.
+6. **Look at the results** in the *Results* tab and **download** the tables and clips in
+   the *Export & import* tab (see [Results, exports and clips](#results-exports-and-clips)).
+
+Your data are stored in the `data_dir` folder named in the config (by default
+`annotation_data` next to the config file). Back it up, or download a full export
+from the admin page, before deleting or moving anything.
+
+## Step-by-step: annotating (annotators)
+
+**Signing in**
+
+1. Open the annotator page (the browser usually opens it automatically).
+2. Type the **participant code** your researcher gave you (for a test, any code such as
+   `TEST01`) and click *Continue*.
+3. The first time you use a code, you are asked for your **age** and **gender**; then
+   click *Start*. Next time, the same code takes you straight back to where you were.
+
+**The annotation screen**
+
+- **Top bar**: the item's name, how many items you have done and how many remain, the
+  *Instructions* button (definitions of all variables and the rating scale), your code
+  and *Log out*.
+- **Left**: the video, audio (with waveform) or text, with play controls, the playback
+  speed and a timeline. On the timeline, the grey line shows what you have played and
+  coloured bars are your segments.
+- **Right, top: the segment editor**, where you create or edit a segment.
+- **Right, bottom: Your segments**, a list of what you have marked. Click one to jump
+  to it and edit or delete it.
+- **Bottom bar**: your progress through the item, the *No personality information*
+  box and the *Submit* button.
+
+**Marking a segment (video/audio)**
+
+1. Play the item. When you notice something that says something about the person's
+   personality, press `[` (or *Now* next to *Start*) at the beginning of the moment
+   and `]` (or *Now* next to *End*) at its end. You can also type times as `mm:ss.s`,
+   and for audio drag across the waveform.
+2. Click *Preview loop* (or press `P`) to check the segment; click it again to stop.
+3. Under *Ratings for this segment*, choose a **variable**, click a **score**, and
+   write **why** (required). *Notes* are optional.
+4. If the segment says something about another variable too, click
+   *+ Rate another variable*. Use ✕ to remove a rating.
+5. Click **Save segment**. It appears in *Your segments* and on the timeline.
+
+**Marking a segment (text)**
+
+1. Select words with the mouse. The selection is extended to whole words and shown
+   in the editor under *Selected text*.
+2. Rate it as above and click **Save segment**. Marked words are shaded; darker shading
+   means several of your segments overlap there. Click a shaded word to open the
+   segments covering it.
+
+**Editing**: click a segment in *Your segments* (or on the timeline/waveform/text),
+change it, and click *Update segment*, or *Delete segment*. *Clear* empties the editor.
+
+**Finishing an item**
+
+- Play the whole item (at least 95 % by default; you may rewind and rewatch) or, for
+  text, scroll to the end. The bar at the bottom shows how far you are.
+- If the item contains no personality information at all, tick
+  *No personality information in this item* and explain why.
+- Click **Submit item & continue**. A submitted item can no longer be changed, and
+  the next item opens. When there are none left, you see *All done*.
+
+You can stop at any time by closing the browser tab: saved segments are kept, and an
+unsaved half-filled form is restored when you return with the same code.
+
+**Keyboard shortcuts** (when you are not typing in a field): `Space` play/pause ·
+`←`/`→` 1 s · `Shift`+`←`/`→` 0.1 s · `[` set start · `]` set end · `P` preview.
+
+Annotators only ever see their own annotations. Items come one at a time in random
+order; nobody gets the same item twice, and items with the fewest annotations are
+offered first so that annotations stay evenly spread.
+
+![Annotating text](docs/text_annotate.png)
 
 ## Configuration
 
@@ -121,34 +272,6 @@ and their annotations are kept.
 Zenodo files are streamed through the tool, so seeking works. Set `cache_media: true`
 to download each file once into `data_dir/media_cache` instead. Note that a Zenodo
 record holds at most 100 files, so larger collections need several records.
-
-## Annotating
-
-1. The annotator enters a **participant code** (no names or e-mail addresses). On the
-   first login they give their age and gender. With the same code they can stop and
-   continue later.
-2. The tool presents items **one at a time, in random order**. No annotator sees the
-   same item twice. Items with the fewest annotations are offered first, so
-   annotations stay evenly spread until every item has reached
-   `annotators_per_item`.
-3. To mark a segment:
-   - **Video/audio**: press `[` at the start and `]` at the end (or type the times, or
-     use the *Now* buttons; for audio you can also drag across the waveform). Check it
-     with *Preview loop* (`P`).
-   - **Text**: select words with the mouse; the selection snaps to whole words.
-4. Rate the segment on one or more variables: choose the variable, a score, and explain
-   why (required). Notes are optional. Segments may overlap.
-5. *Submit* becomes available when the item has been watched/listened to (or read to
-   the end) **and** there is at least one segment, or the box *No personality
-   information in this item* is ticked with an explanation.
-
-Keyboard: `Space` play/pause · `←`/`→` 1 s · `Shift`+`←`/`→` 0.1 s · `[` start ·
-`]` end · `P` preview.
-
-Annotators only ever see their own annotations. Work is saved on the computer as they
-go: segments immediately, and the half-filled segment form as a draft in the browser.
-
-![Annotating text](docs/text_annotate.png)
 
 ## Results, exports and clips
 
@@ -240,6 +363,20 @@ across all of them.
 - Peak segments merge consecutive bins/words that reach the threshold. For video/audio,
   their edges are tightened to where the overlapping annotations actually start and
   end.
+
+## Troubleshooting
+
+| Problem | What to do |
+|---|---|
+| `'python' is not recognized` / `pip` not found | Use **Anaconda Prompt**, not the normal Command Prompt. |
+| `No module named personality_annotator` | You are not in the tool's folder: `cd` into it first (the folder that contains `README.md`). |
+| `No module named fastapi` (or another package) | Run `pip install -r requirements.txt` again in the tool's folder. |
+| The browser doesn't open | Copy the address printed in the Anaconda Prompt (e.g. `http://127.0.0.1:8765/`) into your browser. |
+| *Overview* shows 0 items or an error under *Sources* | Check the `path` or Zenodo link in your config, then click *Re-scan sources*. Relative paths are relative to the config file's folder. |
+| A video doesn't play | Use MP4 (H.264 video, AAC audio). Other formats may not play in every browser. |
+| The annotator page says *All done* immediately | Every item already has enough annotators or was done by this code. Check *Overview*, or raise `annotators_per_item`. |
+| "Problem in config.yaml" when starting | The message names the setting; YAML is sensitive to indentation (use spaces, not tabs). |
+| Windows: *Don't run* is the only option for the .exe | Your organisation blocks unsigned programs; use [Option A](#option-a-with-anaconda-recommended). |
 
 ## Limitations of this version
 
